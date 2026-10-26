@@ -1,0 +1,8 @@
+[package]
+name = "minidb"
+version = "0.1.0"
+edition = "2021"
+# std::fs::File::try_lock/unlock стабилизированы в Rust 1.89.
+rust-version = "1.89"
+
+[dependencies]

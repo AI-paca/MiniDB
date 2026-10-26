@@ -1,0 +1,9 @@
+services:
+  minidb:
+    build: .
+    stdin_open: true
+    tty: true
+    volumes:
+      - minidb-data:/data
+volumes:
+  minidb-data:

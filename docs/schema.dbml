@@ -1,0 +1,24 @@
+Project MiniDB {
+  database_type: 'MiniDB'
+  Note: 'Собственное файловое хранение; INT=i64, FLOAT=f64, STRING=UTF-8'
+}
+Table datasets {
+  id bigint [pk, increment]
+  name varchar(64) [not null]
+  task varchar(32) [not null]
+  size bigint [not null, note: '>= 0']
+}
+Table models {
+  id bigint [pk, increment]
+  name varchar(64) [not null]
+  version varchar(16) [not null]
+}
+Table experiments {
+  id bigint [pk, increment]
+  dataset_id bigint [not null]
+  model_id bigint [not null]
+  accuracy double [not null, note: '0 <= accuracy <= 1']
+  status varchar(16) [not null, note: 'Статус задаётся строкой; пример использует running/completed']
+}
+Ref: experiments.dataset_id > datasets.id [delete: restrict, update: restrict]
+Ref: experiments.model_id > models.id [delete: restrict, update: restrict]

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 920 340" role="img" aria-label="Схема MiniDB: experiments ссылается на datasets и models">
+ <defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M 0 0 L 10 5 L 0 10 z" fill="#426591"/></marker></defs>
+ <rect width="920" height="340" fill="#fff"/>
+ <g fill="#f0f5fb" stroke="#426591"><rect x="20" y="30" width="240" height="210" rx="8"/><rect x="340" y="30" width="240" height="270" rx="8"/><rect x="660" y="30" width="240" height="180" rx="8"/></g>
+ <g font-family="sans-serif" font-size="17" fill="#18304f">
+ <text x="38" y="60" font-weight="bold">datasets</text><text x="38" y="98">id: INT · PK</text><text x="38" y="128">name: STRING</text><text x="38" y="158">task: STRING</text><text x="38" y="188">size: INT ≥ 0</text>
+ <text x="358" y="60" font-weight="bold">experiments</text><text x="358" y="98">id: INT · PK</text><text x="358" y="128">dataset_id: INT · FK</text><text x="358" y="158">model_id: INT · FK</text><text x="358" y="188">accuracy: FLOAT [0, 1]</text><text x="358" y="218">status: STRING</text>
+ <text x="678" y="60" font-weight="bold">models</text><text x="678" y="98">id: INT · PK</text><text x="678" y="128">name: STRING</text><text x="678" y="158">version: STRING</text>
+ <text x="20" y="327" font-size="14">Связи N:1. Удаление и изменение ключа родителя: RESTRICT.</text></g>
+ <g stroke="#426591" fill="none" stroke-width="2" marker-end="url(#arrow)"><path d="M340 123 H300 V93 H260"/><path d="M580 153 H620 V93 H660"/></g>
+</svg>

@@ -1,0 +1,8 @@
+/target/
+/examples/simulator/target/
+/data/
+/scratch/
+/sample/.lock
+/sample/.history
+/sample/*.tmp
+*.lock.tmp
