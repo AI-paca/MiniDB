@@ -273,12 +273,47 @@ impl Database {
     // Добавление записи с проверкой внешних ключей и авто-ID
     pub fn insert(&mut self, table: &str, values: &[Value<'_>]) -> Result<i64> {
         let stored = self.table(table)?;
-        let schema = &stored.schema;
         let normalized = stored.normalize_insert(values)?;
         let vals = normalized.as_slice();
+        let inferred = if stored
+            .schema
+            .columns
+            .iter()
+            .any(|c| matches!(c.data_type.kind, crate::Kind::Null))
+        {
+            stored
+                .schema
+                .infer_types(&vals.iter().copied().enumerate().collect::<Vec<_>>())?
+        } else {
+            None
+        };
+        let schema = inferred.as_ref().unwrap_or(&stored.schema);
         let pk = schema.primary_key;
         self.check_values(schema, vals, None)?;
         let validator = self.validator(schema)?;
+        if let Some(schema) = &inferred {
+            self.check_schema(schema)?;
+            let layout = crate::layout::Layout::from_schema(schema)?;
+            let mut bytes = vec![0; layout.row_size];
+            record::encode_validated_layout(&layout, schema, vals, record::FLAG_FREE, &mut bytes)?;
+            let row = Row {
+                schema,
+                layout: &layout,
+                bytes: &bytes,
+            };
+            let id = row.at(pk)?.int()?;
+            if stored.index.contains_key(&id) {
+                return Err("PRIMARY KEY дублируется".into());
+            }
+            if let Some(rule) = validator {
+                rule(row)?;
+            }
+            let table = self.table_mut(table)?;
+            table.resolve_types(schema)?;
+            table.prepare(vals, record::FLAG_FREE)?;
+            table.insert_prepared()?;
+            return Ok(id);
+        }
         let table = self.table_mut(table)?;
         let row = table.prepare(vals, record::FLAG_FREE)?;
         let id = row.at(pk)?.int()?;

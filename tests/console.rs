@@ -100,7 +100,7 @@ fn shell_sample_join_and_errors_keep_console_alive() {
     assert!(stdout.contains("iris"));
     assert!(stdout.contains("experiments.id"));
     assert!(stderr.contains("FOREIGN KEY"));
-    assert!(stderr.contains("Ожидалось from"));
+    assert!(stderr.contains("Ожидалось FROM"));
     assert!(stdout.contains("Строк: 1"));
     let stdout = success(&temp.run("select * from experiments;\nexit\n"));
     assert!(stdout.contains("Строк: 20"));
@@ -161,13 +161,13 @@ fn sample_is_sql_through_run_sh_and_refuses_to_overwrite_existing_data() {
 }
 
 #[test]
-fn alter_add_column_is_persistent_after_inserts_and_requires_explicit_null() {
+fn alter_add_column_is_persistent_after_inserts_and_rejects_not_null() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY);\nINSERT INTO notes VALUES (1);\nALTER TABLE notes ADD COLUMN text STRING(16) NULL;\nALTER TABLE notes ADD score FLOAT MIN 0 MAX 1 NULL;\nexit;\n"));
     let schema_path = temp.0.join("db/notes.schema.sql");
     let before = fs::read(&schema_path).unwrap();
     let data = fs::read(temp.0.join("db/notes")).unwrap();
-    let rejected = temp.run("ALTER TABLE notes ADD COLUMN text INT NULL;\nALTER TABLE notes ADD COLUMN second INT PRIMARY KEY;\nALTER TABLE notes ADD COLUMN parent INT NULL REFERENCES missing(id);\nALTER TABLE notes ADD COLUMN required INT NOT NULL;\nALTER TABLE notes ADD COLUMN implicit INT;\nexit;\n");
+    let rejected = temp.run("ALTER TABLE notes ADD COLUMN text INT NULL;\nALTER TABLE notes ADD COLUMN second INT PRIMARY KEY;\nALTER TABLE notes ADD COLUMN parent INT NULL REFERENCES missing(id);\nALTER TABLE notes ADD COLUMN required INT NOT NULL;\nexit;\n");
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("старые записи не имеют значения"));
     assert_eq!(fs::read(&schema_path).unwrap(), before);
@@ -564,4 +564,122 @@ fn missing_required_insert_field_names_the_column_and_writes_nothing() {
             .unwrap(),
         Some(true)
     );
+}
+
+#[test]
+fn malformed_commands_show_examples_immediately_and_leave_data_unchanged() {
+    let temp = Temp::new();
+    success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO notes VALUES (1, 'keep');\nexit;\n"));
+    let before = fs::read(temp.0.join("db/notes")).unwrap();
+    for (sql, example) in [
+        ("SELEC * FROM notes;", "SELECT * FROM notes;"),
+        (
+            "DELETE notes WHERE id = 1;",
+            "DELETE FROM notes WHERE id = 1;",
+        ),
+        (
+            "ALTER TABLE notes ADD comment STRNG;",
+            "ALTER TABLE notes ADD COLUMN comment STRING(128) NULL;",
+        ),
+        ("SELECT missing FROM notes;", "Столбцы notes: id, name"),
+    ] {
+        let output = temp.run(&format!("{sql}\nSELECT * FROM notes;\nexit;\n"));
+        assert!(!output.status.success());
+        let error = String::from_utf8(output.stderr).unwrap();
+        assert!(error.contains("Ошибка:"), "{error}");
+        assert!(error.contains("Подсказка:"), "{error}");
+        assert!(error.contains(example), "{error}");
+        assert!(String::from_utf8(output.stdout)
+            .unwrap()
+            .contains("\"keep\""));
+        assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), before);
+    }
+}
+
+#[test]
+fn insert_hint_uses_required_columns_and_is_an_executable_example() {
+    let temp = Temp::new();
+    success(&temp.run("CREATE TABLE measurements (key INT PRIMARY KEY, title STRING(3) NOT NULL, count INT MIN 5 NOT NULL, accuracy FLOAT MIN 0 MAX 1 NOT NULL, optional STRING NULL);\nexit;\n"));
+    let output = temp.run("INSERT INTO measurements (title) VALUES ('abc');\nexit;\n");
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    let example = "INSERT INTO measurements (title, count, accuracy) VALUES ('exa', 5, 0.5);";
+    assert!(error.contains(example), "{error}");
+    assert!(error.contains("Столбцы measurements: key, title, count, accuracy, optional"));
+    success(&temp.run(&format!("{example}\nexit;\n")));
+    let mut db = minidb::Database::open(temp.0.join("db")).unwrap();
+    assert_eq!(
+        db.scan("measurements", &minidb::Expr::All, |_| Ok(()))
+            .unwrap(),
+        1
+    );
+}
+
+#[test]
+fn drop_column_reports_unsupported_and_delete_examples_distinguish_rows_from_columns() {
+    let temp = Temp::new();
+    success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO notes VALUES (1, 'first');\nINSERT INTO notes VALUES (2, 'second');\nexit;\n"));
+    let before = fs::read(temp.0.join("db/notes")).unwrap();
+    let output =
+        temp.run("ALTER TABLE notes DROP COLUMN name;\nDELETE COLUMN name FROM notes;\nexit;\n");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(!output.status.success());
+    assert!(error.contains("DROP COLUMN) пока не поддерживается"));
+    assert!(error.contains("DELETE FROM notes WHERE id = 1;"));
+    assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), before);
+    let output = temp.run("DELETE notes;\nexit;\n");
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("Удалить ВСЕ строки, сохранив таблицу и столбцы:"));
+    assert!(error.contains("DELETE FROM notes;"));
+    success(&temp.run("ALTER TABLE notes ADD COLUMN comment STRING(128) NULL;\nUPDATE notes SET comment = 'clear me';\nUPDATE notes SET comment = NULL WHERE id = 1;\nDELETE FROM notes WHERE id = 1;\nexit;\n"));
+    let stdout = success(&temp.run(
+        "SELECT * FROM notes;\nDELETE FROM notes;\nSELECT * FROM notes;\nDESCRIBE notes;\nexit;\n",
+    ));
+    assert!(stdout.contains("Строк: 1"));
+    assert!(stdout.contains("Строк: 0"));
+    assert!(stdout.contains("comment"));
+}
+
+#[test]
+fn hints_use_the_failed_statement_and_explain_foreign_key_restrictions() {
+    let temp = Temp::new();
+    success(&temp.sample());
+    let output =
+        temp.run("SHOW TABLES; DELETE experiments;\nDELETE FROM datasets WHERE id = 1;\nexit;\n");
+    assert!(!output.status.success());
+    let error = String::from_utf8(output.stderr).unwrap();
+    assert!(error.contains("DELETE FROM experiments WHERE id = 1;"));
+    assert!(error.contains("DELETE FROM datasets WHERE id = 1;"));
+    assert!(error.contains("сначала удалите или измените ссылающиеся строки"));
+    let mut db = minidb::Database::open(temp.0.join("db")).unwrap();
+    assert_eq!(
+        db.scan("datasets", &minidb::Expr::All, |_| Ok(())).unwrap(),
+        5
+    );
+    assert_eq!(
+        db.scan("experiments", &minidb::Expr::All, |_| Ok(()))
+            .unwrap(),
+        20
+    );
+}
+
+#[test]
+fn alter_accepts_all_keyword_cases_and_untyped_values_keep_their_original_text() {
+    let temp = Temp::new();
+    let stdout = success(&temp.run("CrEaTe TaBlE datasets (id iNt pRiMaRy KeY, name StRiNg NoT NuLl);\nInSeRt InTo datasets (name) VaLuEs ('Original MiXeD');\nALTER TABLE datasets ADD COLUMN comment STRING(128) NULL;\naLtEr tAbLe datasets aDd cOlUmN note;\nUpDaTe datasets SeT note = 'MiXeD ALTER Null Русский' WhErE id = 1;\nSeLeCt * FrOm datasets;\nDeScRiBe datasets;\nexit;\n"));
+    assert!(stdout.contains("Добавлен столбец datasets.comment"));
+    assert!(stdout.contains("Добавлен столбец datasets.note"));
+    let mut db = minidb::Database::open(temp.0.join("db")).unwrap();
+    assert_eq!(
+        db.get("datasets", 1, |r| Ok(r.get("name")?
+            == minidb::Value::String("Original MiXeD")
+            && r.get("note")?
+                == minidb::Value::String("MiXeD ALTER Null Русский")))
+            .unwrap(),
+        Some(true)
+    );
+    assert!(matches!(
+        db.schema("datasets").unwrap().columns[3].data_type.kind,
+        minidb::Kind::String { .. }
+    ));
 }

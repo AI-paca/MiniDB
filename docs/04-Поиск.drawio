@@ -1,0 +1,34 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net"><diagram id="t4" name="04-Поиск">
+<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="1000" math="0" shadow="0">
+<root>
+<mxCell id="0" /><mxCell id="1" parent="0" />
+
+<mxCell id="t" value="Выборка: что считается заранее, а что перебирается" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="900" height="30" as="geometry" /></mxCell>
+
+<mxCell id="p1" value="Шаг 1. Подготовка условия — один раз на запрос" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="40" y="70" width="620" height="240" as="geometry" /></mxCell>
+<mxCell id="p1a" value="имя колонки → её номер&lt;br&gt;&lt;i&gt;в цикле по строкам имён уже нет&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#10b981;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="p1"><mxGeometry x="20" y="45" width="580" height="45" as="geometry" /></mxCell>
+<mxCell id="p1b" value="значение из запроса сверяется с видом колонки&lt;br&gt;строка против числа — отказ сразу, а не пустой ответ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="p1"><mxGeometry x="20" y="100" width="580" height="50" as="geometry" /></mxCell>
+<mxCell id="p1c" value="дерево условия: НЕ → И → ИЛИ, скобки&lt;br&gt;пустое значение даёт «неизвестно», а не ложь:&lt;br&gt;«неизвестно И ложь» = ложь, «неизвестно ИЛИ истина» = истина" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="p1"><mxGeometry x="20" y="160" width="580" height="65" as="geometry" /></mxCell>
+
+<mxCell id="p2" value="Шаг 2. Выполнение" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="700" y="70" width="660" height="240" as="geometry" /></mxCell>
+<mxCell id="p2a" value="для каждой версии по порядку:&lt;br&gt;&amp;nbsp;&amp;nbsp;читать слоты подряд крупными кусками&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;флаг не «живой» → пропустить&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;проверить условие&lt;br&gt;&amp;nbsp;&amp;nbsp;&amp;nbsp;&amp;nbsp;подошло → отдать нужные колонки" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="p2"><mxGeometry x="20" y="45" width="620" height="105" as="geometry" /></mxCell>
+<mxCell id="p2b" value="строки отдаются по одной, результат целиком в памяти не собирается&lt;br&gt;буфер под значения переиспользуется между строками" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#10b981;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="p2"><mxGeometry x="20" y="160" width="620" height="55" as="geometry" /></mxCell>
+
+<mxCell id="hon" value="Важно для отчёта: выборка всегда идёт полным перебором" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#ef4444;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="40" y="350" width="640" height="250" as="geometry" /></mxCell>
+<mxCell id="hon1" value="условие «ключ = значение» сейчас НЕ переключает выборку&lt;br&gt;на переход по указателю: обработчик условия про указатель не знает&lt;br&gt;&lt;br&gt;то есть запрос по ключу стоит столько же,&lt;br&gt;сколько запрос по любому другому полю" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="hon"><mxGeometry x="20" y="45" width="600" height="100" as="geometry" /></mxCell>
+<mxCell id="hon2" value="чтобы сравнение «до и после индекса» в отчёте было честным,&lt;br&gt;нужен отдельный быстрый путь: увидеть условие вида «ключ = значение»&lt;br&gt;и сходить по указателю вместо перебора" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fb923c;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="hon"><mxGeometry x="20" y="155" width="600" height="75" as="geometry" /></mxCell>
+
+<mxCell id="whr" value="Где указатель действительно работает" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="720" y="350" width="640" height="250" as="geometry" /></mxCell>
+<mxCell id="whr1" value="— проверка, что ключ не занят, при вставке&lt;br&gt;— проверка, что ссылка ведёт на живую строку&lt;br&gt;— получение строки по ключу через программный доступ&lt;br&gt;— правая сторона соединения таблиц&lt;br&gt;— поиск строки, которую меняют" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ecfdf5;strokeColor=#10b981;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="whr"><mxGeometry x="20" y="45" width="600" height="110" as="geometry" /></mxCell>
+<mxCell id="whr2" value="соединение: левая таблица перебирается целиком,&lt;br&gt;для каждой строки — один переход в правую по её ключу&lt;br&gt;справа допускается только свой ключ" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="whr"><mxGeometry x="20" y="165" width="600" height="65" as="geometry" /></mxCell>
+
+<mxCell id="cost" value="Стоимость: выборка — весь объём · соединение — объём левой таблицы плюс переход на каждую строку · вставка — один слот плюс проверки ссылок по указателю · удаление — объём всех дочерних таблиц · открытие базы — весь объём." style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff7ed;strokeColor=#fb923c;fontSize=12;align=left;spacingLeft=12;" vertex="1" parent="1"><mxGeometry x="40" y="640" width="1320" height="70" as="geometry" /></mxCell>
+
+<mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#475569;" edge="1" parent="1" source="p1" target="p2"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+</root>
+</mxGraphModel>
+</diagram>
+
+</mxfile>

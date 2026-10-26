@@ -39,6 +39,7 @@ fn struct_name(table: &str) -> String {
 
 fn tag(kind: Kind) -> u8 {
     match kind {
+        Kind::Null => 3,
         Kind::Int { .. } => 0,
         Kind::Float { .. } => 1,
         Kind::String { .. } => 2,
@@ -117,6 +118,17 @@ pub fn check_reader(
 /// в собственном impl; сгенерированный адаптер вызывает этот метод.
 pub fn generate(schema: &Schema) -> Result<String> {
     schema.check()?;
+    if let Some(col) = schema
+        .columns
+        .iter()
+        .find(|c| matches!(c.data_type.kind, Kind::Null))
+    {
+        return Err(format!(
+            "Тип {}.{} ещё NULL: сначала запишите ненулевое значение, затем сгенерируйте Rust-код",
+            schema.name, col.name
+        )
+        .into());
+    }
     let layout = crate::layout::Layout::from_schema(schema)?;
     let name = struct_name(&schema.name);
     let mut names = HashSet::new();
@@ -154,6 +166,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
     let initial = schema.history()[&1];
     for (i, col) in schema.columns.iter().enumerate() {
         let ty = match col.data_type.kind {
+            Kind::Null => return Err("Отложенный тип ещё не определён".into()),
             Kind::Int { .. } => "i64",
             Kind::Float { .. } => "f64",
             Kind::String { .. } => "::std::string::String",
@@ -173,6 +186,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
     for (i, col) in schema.columns.iter().enumerate() {
         let field = rust_name(&col.name);
         let (variant, decode) = match col.data_type.kind {
+            Kind::Null => return Err("Отложенный тип ещё не определён".into()),
             Kind::Int { .. } => ("Int", "value"),
             Kind::Float { .. } => ("Float", "value"),
             Kind::String { .. } => ("String", "value.to_owned()"),
@@ -204,6 +218,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
     for (i, col) in schema.columns.iter().enumerate() {
         let field = rust_name(&col.name);
         let (variant, access) = match col.data_type.kind {
+            Kind::Null => return Err("Отложенный тип ещё не определён".into()),
             Kind::Int { .. } => ("Int", ""),
             Kind::Float { .. } => ("Float", ""),
             Kind::String { .. } => ("String", ".as_str()"),

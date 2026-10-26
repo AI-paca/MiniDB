@@ -87,8 +87,8 @@ fn history_and_evolution_reject_destructive_changes() -> Result<()> {
         assert!(Schema::from_text(&text).is_err());
     }
     for sql in [
-        "ALTER TABLE items ADD COLUMN null INT;",
-        "ALTER TABLE items ADD COLUMN parent INT REFERENCES null(id);",
+        "ALTER TABLE items ADD COLUMN required INT NOT NULL;",
+        "ALTER TABLE items ADD COLUMN second INT PRIMARY KEY;",
     ] {
         assert!(minidb::sql::parse(sql).is_err());
     }

@@ -216,14 +216,15 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>> {
 }
 
 pub fn parse(text: &str) -> Result<Vec<Command>> {
-    if text.trim().trim_end_matches(';').trim() == "--help" {
+    if text
+        .trim()
+        .trim_end_matches(';')
+        .trim()
+        .eq_ignore_ascii_case("--help")
+    {
         return Ok(vec![Command::Help]);
     }
-    let mut parser = Parser {
-        tokens: tokenize(text)?,
-        pos: 0,
-        fold_names: true,
-    };
+    let mut parser = Parser::new(text, true)?;
     let mut commands = Vec::new();
     while parser.pos < parser.tokens.len() {
         if parser.eat(";") {
@@ -238,11 +239,7 @@ pub fn parse(text: &str) -> Result<Vec<Command>> {
 }
 
 pub(crate) fn stored_schema(text: &str) -> Result<Schema> {
-    let mut parser = Parser {
-        tokens: tokenize(text)?,
-        pos: 0,
-        fold_names: false,
-    };
+    let mut parser = Parser::new(text, false)?;
     parser.need("CREATE")?;
     let mut schema = parser.schema(true)?;
     parser.eat(";");
@@ -278,13 +275,44 @@ pub(crate) fn stored_schema(text: &str) -> Result<Schema> {
 }
 
 struct Parser {
-    tokens: Vec<Token>,
+    tokens: Vec<Token>,           // Исходные имена, строки и пути.
+    grammar: Vec<Option<String>>, // Отдельная UPPERCASE-копия только слов/символов.
     pos: usize,
     fold_names: bool,
 }
 impl Parser {
+    fn new(text: &str, fold_names: bool) -> Result<Self> {
+        let tokens = tokenize(text)?;
+        let grammar = tokens
+            .iter()
+            .map(|token| match token {
+                Token::Word(word) | Token::Symbol(word) => Some(word.to_ascii_uppercase()),
+                Token::Text(_) => None,
+            })
+            .collect();
+        Ok(Self {
+            tokens,
+            grammar,
+            pos: 0,
+            fold_names,
+        })
+    }
+    fn keyword(&mut self) -> Result<String> {
+        if !matches!(self.tokens.get(self.pos), Some(Token::Word(_))) {
+            return Err("Ожидалось ключевое слово".into());
+        }
+        let word = self.grammar[self.pos]
+            .clone()
+            .ok_or("Ожидалось ключевое слово")?;
+        self.pos += 1;
+        Ok(word)
+    }
     fn eat(&mut self, expected: &str) -> bool {
-        let matched = matches!(self.tokens.get(self.pos), Some(Token::Word(s) | Token::Symbol(s)) if s.eq_ignore_ascii_case(expected));
+        let matched = self
+            .grammar
+            .get(self.pos)
+            .and_then(Option::as_deref)
+            .is_some_and(|word| word == expected.to_ascii_uppercase());
         if matched {
             self.pos += 1;
         }
@@ -295,7 +323,7 @@ impl Parser {
             Ok(())
         } else {
             Err(format!(
-                "Ожидалось {expected}; получено {}. Введите help для примеров.",
+                "Ожидалось {expected}; получено {}.",
                 self.tokens
                     .get(self.pos)
                     .map(|token| match token {
@@ -361,38 +389,41 @@ impl Parser {
         }
     }
     fn command(&mut self) -> Result<Command> {
-        let command = self.word()?.to_lowercase();
+        let command = self.keyword()?;
         Ok(match command.as_str() {
-            "help" | "-h" | "--help" | ".help" => Command::Help,
-            "exit" | "quit" | ".exit" => Command::Exit,
-            "tables" => Command::Tables,
-            "show" => {
-                if self.eat("database") {
+            "HELP" | "-H" | "--HELP" | ".HELP" => Command::Help,
+            "EXIT" | "QUIT" | ".EXIT" => Command::Exit,
+            "TABLES" => Command::Tables,
+            "SHOW" => {
+                if self.eat("DATABASE") {
                     Command::DatabasePath
                 } else {
-                    self.need("tables")?;
+                    self.need("TABLES")?;
                     Command::Tables
                 }
             }
-            "describe" | "desc" => Command::Describe(self.name()?),
-            "open" => Command::Open(self.path()?),
-            "backup" => Command::Backup(self.path()?),
-            "restore" => {
+            "DESCRIBE" | "DESC" => Command::Describe(self.name()?),
+            "OPEN" => Command::Open(self.path()?),
+            "BACKUP" => Command::Backup(self.path()?),
+            "RESTORE" => {
                 let backup = self.path()?;
-                self.need("to")?;
+                self.need("TO")?;
                 Command::Restore(backup, self.path()?)
             }
-            "create" => {
+            "CREATE" => {
                 let schema = self.schema(false)?;
                 Command::Create(schema)
             }
-            "alter" => {
-                self.need("table")?;
+            "ALTER" => {
+                self.need("TABLE")?;
                 let table = self.name()?;
-                self.need("add")?;
-                self.eat("column");
-                let (column, primary_key, explicit_null) = self.column()?;
-                if !column.data_type.nullable || !explicit_null {
+                if self.eat("DROP") {
+                    return Err("Удаление столбца (DROP COLUMN) пока не поддерживается; DELETE удаляет строки, а не столбцы".into());
+                }
+                self.need("ADD")?;
+                self.eat("COLUMN");
+                let (column, primary_key) = self.column(true)?;
+                if !column.data_type.nullable {
                     return Err("ADD COLUMN требует NULL: старые записи не имеют значения".into());
                 }
                 if primary_key {
@@ -400,15 +431,15 @@ impl Parser {
                 }
                 Command::AddColumn { table, column }
             }
-            "insert" => {
-                self.need("into")?;
+            "INSERT" => {
+                self.need("INTO")?;
                 let table = self.name()?;
                 let columns = if self.eat("(") {
                     self.names(")")?
                 } else {
                     Vec::new()
                 };
-                self.need("values")?;
+                self.need("VALUES")?;
                 self.need("(")?;
                 let mut values = Vec::new();
                 loop {
@@ -424,7 +455,7 @@ impl Parser {
                     values,
                 }
             }
-            "select" => {
+            "SELECT" => {
                 let columns = if self.eat("*") {
                     Vec::new()
                 } else {
@@ -434,12 +465,12 @@ impl Parser {
                     }
                     columns
                 };
-                self.need("from")?;
+                self.need("FROM")?;
                 let table = self.name()?;
-                let join = if self.eat("inner") {
-                    self.need("join")?;
+                let join = if self.eat("INNER") {
+                    self.need("JOIN")?;
                     Some(self.join()?)
-                } else if self.eat("join") {
+                } else if self.eat("JOIN") {
                     Some(self.join()?)
                 } else {
                     None
@@ -452,9 +483,9 @@ impl Parser {
                     condition,
                 }
             }
-            "update" => {
+            "UPDATE" => {
                 let table = self.name()?;
-                self.need("set")?;
+                self.need("SET")?;
                 let mut values = Vec::new();
                 loop {
                     let name = self.name()?;
@@ -470,14 +501,14 @@ impl Parser {
                     condition: self.condition()?,
                 }
             }
-            "delete" => {
-                self.need("from")?;
+            "DELETE" => {
+                self.need("FROM")?;
                 Command::Delete {
                     table: self.name()?,
                     condition: self.condition()?,
                 }
             }
-            _ => return Err(format!("Неизвестная команда {command}. Введите help или -h.").into()),
+            _ => return Err(format!("Неизвестная команда {command}.").into()),
         })
     }
     fn names(&mut self, end: &str) -> Result<Vec<String>> {
@@ -564,14 +595,25 @@ impl Parser {
         }
     }
     // CREATE и ALTER используют один разбор определения столбца.
-    fn column(&mut self) -> Result<(Column, bool, bool)> {
+    fn column(&mut self, allow_inferred: bool) -> Result<(Column, bool)> {
         let column_name = self.name()?;
-        let mut data_type = match self.word()?.to_ascii_lowercase().as_str() {
-            "int" => DataType::INT,
-            "float" => DataType::FLOAT,
-            "string" => DataType::STRING,
-            _ => return Err("Типы: INT, FLOAT, STRING".into()),
-        };
+        let omitted = allow_inferred
+            && (self.pos == self.tokens.len() || self.grammar[self.pos].as_deref() == Some(";"));
+        let mut data_type =
+            if omitted {
+                DataType::NULL
+            } else {
+                match self.keyword()?.as_str() {
+                    "INT" => DataType::INT,
+                    "FLOAT" => DataType::FLOAT,
+                    "STRING" => DataType::STRING,
+                    "NULL" => DataType::NULL,
+                    _ => return Err(
+                        "Типы: INT, FLOAT, STRING; новый столбец без типа ожидает первого значения"
+                            .into(),
+                    ),
+                }
+            };
         if self.eat("(") {
             let max_bytes = self.word()?.parse()?;
             self.need(")")?;
@@ -584,7 +626,6 @@ impl Parser {
         data_type.nullable = true;
         let mut references = None;
         let mut pk = false;
-        let mut explicit_null = false;
         loop {
             if self.eat("primary") {
                 self.need("key")?;
@@ -594,7 +635,6 @@ impl Parser {
                 data_type.nullable = false;
             } else if self.eat("null") {
                 data_type.nullable = true;
-                explicit_null = true;
             } else if self.eat("references") {
                 let table = self.name()?;
                 self.need("(")?;
@@ -632,7 +672,6 @@ impl Parser {
                 references,
             },
             pk,
-            explicit_null,
         ))
     }
     fn schema(&mut self, stored: bool) -> Result<Schema> {
@@ -642,7 +681,7 @@ impl Parser {
         let mut columns = Vec::new();
         let mut primary_key = None;
         loop {
-            let (column, pk, _) = self.column()?;
+            let (column, pk) = self.column(false)?;
             if pk && primary_key.replace(columns.len()).is_some() {
                 return Err("Разрешён один PRIMARY KEY".into());
             }
@@ -659,7 +698,9 @@ impl Parser {
             }
             schema.validator = Some(self.name()?);
         }
-        schema.check()?;
+        if !stored {
+            schema.check()?;
+        }
         Ok(schema)
     }
 }

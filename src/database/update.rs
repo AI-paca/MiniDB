@@ -11,14 +11,37 @@ pub(super) fn execute(
     filter: &Expr<'_>,
     values: &[(&str, Value<'_>)],
 ) -> Result<usize> {
-    let schema = db.schema(table)?.clone();
+    let original = db.schema(table)?;
+    let inferred = if original
+        .columns
+        .iter()
+        .any(|c| matches!(c.data_type.kind, crate::Kind::Null))
+    {
+        let fields = values
+            .iter()
+            .map(|(name, value)| Ok((original.column(name)?, *value)))
+            .collect::<Result<Vec<_>>>()?;
+        original.infer_types(&fields)?
+    } else {
+        None
+    };
+    let layout = if let Some(schema) = &inferred {
+        db.check_schema(schema)?;
+        crate::layout::Layout::from_schema(schema)?
+    } else {
+        db.table(table)?.layout.clone()
+    };
+    let schema = inferred.unwrap_or_else(|| original.clone());
     let assignments = update_assignments(&schema, values)?;
-    let plan = stage_updates(db.table_mut(table)?, filter, &assignments)?;
+    let plan = stage_updates(db.table_mut(table)?, filter, &assignments, &schema, &layout)?;
     apply(db, table, &schema, plan)
 }
 
 fn apply(db: &mut Database, table: &str, schema: &Schema, plan: UpdatePlan) -> Result<usize> {
-    let layout = &db.table(table)?.layout;
+    if plan.ids.is_empty() {
+        return Ok(0);
+    }
+    let layout = crate::layout::Layout::from_schema(schema)?;
     layout.validate(schema)?;
     for ((old_id, id), bytes) in plan
         .ids
@@ -31,7 +54,7 @@ fn apply(db: &mut Database, table: &str, schema: &Schema, plan: UpdatePlan) -> R
         db.validate_row(
             Row {
                 schema,
-                layout,
+                layout: &layout,
                 bytes,
             },
             &plan.removed,
@@ -41,6 +64,7 @@ fn apply(db: &mut Database, table: &str, schema: &Schema, plan: UpdatePlan) -> R
     let replaced: HashSet<_> = plan.ids.iter().map(|&(id, _)| id).collect();
     db.check_references(table, &plan.removed, &replaced)?;
     let table = db.table_mut(table)?;
+    table.resolve_types(schema)?;
     let count = plan.ids.len();
     table.update_batch(&plan.ids, &plan.bytes)?;
     Ok(count)
@@ -145,6 +169,8 @@ fn stage_updates(
     table: &mut Table,
     filter: &Expr<'_>,
     assignments: &HashMap<usize, Value<'_>>,
+    target: &Schema,
+    layout: &crate::layout::Layout,
 ) -> Result<UpdatePlan> {
     let filter = filter.prepare(&table.schema)?;
     let mut plan = UpdatePlan {
@@ -153,14 +179,16 @@ fn stage_updates(
         removed: HashSet::new(),
         new_ids: HashSet::new(),
     };
-    let layout = table.layout.clone();
     let mut buffer = vec![Value::Null; table.schema.columns.len()];
     table.scan(|row| {
         if filter.matches(row)? {
             buffer = stage_row(
                 &mut plan,
-                row,
-                &layout,
+                Row {
+                    schema: target,
+                    ..row
+                },
+                layout,
                 assignments,
                 std::mem::take(&mut buffer),
             )?;

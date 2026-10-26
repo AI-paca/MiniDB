@@ -68,6 +68,7 @@ impl fmt::Display for Value<'_> {
 // Виды полей и ограничения их значений
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Kind {
+    Null, // Тип ещё не выбран: допустимы только NULL, первая запись задаст тип.
     Int { min: i64, max: i64 },
     Float { min: f64, max: f64 },
     String { max_bytes: usize },
@@ -81,6 +82,10 @@ pub struct DataType {
 }
 
 impl DataType {
+    pub const NULL: Self = Self {
+        kind: Kind::Null,
+        nullable: true,
+    };
     pub const INT: Self = Self {
         kind: Kind::Int {
             min: i64::MIN,
@@ -123,6 +128,7 @@ impl DataType {
     // Проверка допустимых границ типа
     pub(crate) fn check(self) -> Result<()> {
         let valid = match self.kind {
+            Kind::Null => self.nullable,
             Kind::Int { min, max } => min <= max,
             Kind::Float { min, max } => min.is_finite() && max.is_finite() && min <= max,
             Kind::String { max_bytes } => {

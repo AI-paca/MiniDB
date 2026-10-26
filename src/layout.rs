@@ -78,7 +78,8 @@ impl Layout {
             col.data_type.check()?;
             let same_type = matches!(
                 (field.kind, col.data_type.kind),
-                (Kind::Int { .. }, Kind::Int { .. })
+                (Kind::Null, Kind::Null)
+                    | (Kind::Int { .. }, Kind::Int { .. })
                     | (Kind::Float { .. }, Kind::Float { .. })
                     | (Kind::String { .. }, Kind::String { .. })
             );

@@ -1,6 +1,7 @@
 #[cfg(any(unix, test))]
 mod completion;
 mod display;
+mod hints;
 #[cfg(unix)]
 mod terminal;
 use display::{describe, header, print_values};
@@ -26,12 +27,22 @@ const HELP: &str = "MiniDB — команды вводятся здесь, по�
 
   CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL, score FLOAT);
   ALTER TABLE notes ADD COLUMN attempts INT NULL;
+  ALTER TABLE notes ADD COLUMN note;  тип NULL до первого ненулевого значения
   INSERT INTO notes (name, score) VALUES ('Alice', 0.9);
   INSERT INTO notes (name, score) VALUES ('Bob', 0.8);
   SELECT * FROM notes;
   SELECT id, name FROM notes WHERE score >= 0.8 AND (id = 1 OR id = 2);
   UPDATE notes SET name = 'Ann' WHERE id = 1;
   DELETE FROM notes WHERE id = 2;
+  DELETE FROM notes;            удалить все строки, сохранив таблицу и столбцы
+
+Добавление столбца: ALTER TABLE notes ADD COLUMN comment;
+Без типа новый столбец имеет тип NULL; первый INSERT/UPDATE с ненулевым
+значением фиксирует INT, FLOAT или STRING. Явный тип тоже можно задать.
+Удаление столбца (DROP COLUMN) пока не поддерживается.
+DELETE удаляет строки с данными. UPDATE notes SET comment = NULL WHERE id = 2
+очищает значение nullable-поля, сохраняя столбец.
+После ошибки сразу появляется пример команды; отдельно вызывать help не нужно.
 
 Примеры запросов к базе sample, созданной через ./sample.sh:
   SELECT * FROM datasets;
@@ -148,6 +159,7 @@ fn run() -> Result<()> {
         match sql::parse(&input) {
             Ok(commands) => {
                 for command in commands {
+                    let context = hints::Context::command(&command);
                     match execute(&mut db, command) {
                         Ok(false) => {
                             if failed && !interactive {
@@ -161,6 +173,7 @@ fn run() -> Result<()> {
                                 return Err(error);
                             }
                             eprintln!("Ошибка: {error}");
+                            eprintln!("{}", context.example(db.as_ref(), &error.to_string()));
                             failed = true;
                         }
                     }
@@ -168,13 +181,22 @@ fn run() -> Result<()> {
             }
             Err(error) => {
                 eprintln!("Ошибка: {error}");
+                eprintln!(
+                    "{}",
+                    hints::Context::input(&input).example(db.as_ref(), &error.to_string())
+                );
                 failed = true;
             }
         }
         input.clear();
     }
     if !input.trim().is_empty() {
-        return Err("Команда не закончена: проверьте кавычки и скобки".into());
+        let error = "Команда не закончена: проверьте кавычки и скобки";
+        return Err(format!(
+            "{error}\n{}",
+            hints::Context::input(&input).example(db.as_ref(), error)
+        )
+        .into());
     }
     if failed && !interactive {
         return Err("В сценарии были ошибки".into());

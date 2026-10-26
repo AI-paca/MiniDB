@@ -70,6 +70,7 @@ pub(crate) fn describe(schema: &Schema) {
     header(&headers);
     for (i, col) in schema.columns.iter().enumerate() {
         let (kind, bounds) = match col.data_type.kind {
+            minidb::Kind::Null => ("NULL".into(), "Тип по первому значению".into()),
             minidb::Kind::Int { min, max } => (
                 "INT".into(),
                 if min != i64::MIN || max != i64::MAX {
@@ -112,6 +113,15 @@ pub(crate) fn describe(schema: &Schema) {
             rules.join(", "),
         ];
         print_cells(&headers, cells.into_iter());
+    }
+    if schema
+        .columns
+        .iter()
+        .any(|c| matches!(c.data_type.kind, minidb::Kind::Null))
+    {
+        println!(
+            "Тип NULL: первый INSERT/UPDATE с ненулевым значением определит тип нового столбца."
+        );
     }
 }
 

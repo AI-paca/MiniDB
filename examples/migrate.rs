@@ -250,6 +250,7 @@ fn parse_values(schema: &Schema, text: &str) -> Result<Vec<Literal>> {
             Literal::Null
         } else {
             match col.data_type.kind {
+                Kind::Null => return Err("Старый формат не содержит отложенных типов".into()),
                 Kind::Int { .. } => Literal::Int(field.parse()?),
                 Kind::Float { .. } => Literal::Float(field.parse()?),
                 Kind::String { .. } => Literal::Text(unquote(field)?),

@@ -29,6 +29,7 @@ impl Column {
     // Получение ширины поля в байтах
     pub fn width(&self) -> Result<usize> {
         match self.data_type.kind {
+            Kind::Null => Ok(0),
             Kind::Int { .. } | Kind::Float { .. } => Ok(8),
             Kind::String { max_bytes } => max_bytes
                 .checked_add(2)
@@ -103,6 +104,32 @@ impl Schema {
         Ok(next)
     }
 
+    /// Только поля, добавленные после v1, могут ожидать первого ненулевого значения.
+    pub(crate) fn infer_types(&self, values: &[(usize, crate::Value<'_>)]) -> Result<Option<Self>> {
+        let mut next = None;
+        for &(index, value) in values {
+            if !matches!(self.columns[index].data_type.kind, Kind::Null)
+                || value == crate::Value::Null
+            {
+                continue;
+            }
+            let kind = match value {
+                crate::Value::Null => continue,
+                crate::Value::Int(_) => DataType::INT.kind,
+                crate::Value::Float(_) => DataType::FLOAT.kind,
+                crate::Value::String(text) => Kind::String {
+                    max_bytes: text.len().max(crate::types::DEFAULT_STRING_BYTES),
+                },
+            };
+            let next = next.get_or_insert_with(|| self.clone());
+            next.columns[index].data_type.kind = kind;
+        }
+        if let Some(next) = &next {
+            check_resolution(self, next)?;
+        }
+        Ok(next)
+    }
+
     // Преобразование схемы в текст
     pub fn to_text(&self) -> String {
         crate::storage::schema_text(self)
@@ -164,6 +191,13 @@ impl Schema {
                 return Err("Повторное имя столбца".into());
             }
         }
+        for (index, col) in self.columns.iter().enumerate() {
+            if matches!(col.data_type.kind, Kind::Null)
+                && (index < initial || !col.data_type.nullable || col.references.is_some())
+            {
+                return Err("Отложенный тип NULL разрешён только nullable-столбцам, добавленным после v1, без REFERENCES".into());
+            }
+        }
         let pk = self
             .columns
             .get(self.primary_key)
@@ -176,6 +210,32 @@ impl Schema {
         }
         Ok(())
     }
+}
+
+/// Разрешение отложенного типа не добавляет полей и не меняет историю ADD COLUMN.
+pub(crate) fn check_resolution(old: &Schema, new: &Schema) -> Result<()> {
+    old.check()?;
+    new.check()?;
+    if old.version != new.version
+        || old.history() != new.history()
+        || old.name != new.name
+        || old.primary_key != new.primary_key
+        || old.validator != new.validator
+        || old.columns.len() != new.columns.len()
+        || old.columns.iter().zip(&new.columns).any(|(a, b)| {
+            a != b
+                && !(matches!(a.data_type.kind, Kind::Null)
+                    && !matches!(b.data_type.kind, Kind::Null)
+                    && a.name == b.name
+                    && a.data_type.nullable
+                    && b.data_type.nullable
+                    && a.references.is_none()
+                    && b.references.is_none())
+        })
+    {
+        return Err("Можно определить только ещё не заданный тип нового столбца NULL".into());
+    }
+    Ok(())
 }
 
 /// Единственная совместимая эволюция — добавление nullable-полей в конец.

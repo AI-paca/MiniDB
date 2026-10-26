@@ -142,6 +142,9 @@ impl<'a> Row<'a> {
             .ok_or("Повреждён offset")?;
         let field = self.bytes.get(col.offset..end).ok_or("Повреждена запись")?;
         let value = match col.kind {
+            Kind::Null => {
+                return Err("Поле отложенного типа NULL содержит ненулевое значение".into())
+            }
             Kind::Int { .. } => Value::Int(i64::from_le_bytes(field.try_into()?)),
             Kind::Float { .. } => Value::Float(f64::from_le_bytes(field.try_into()?)),
             Kind::String { max_bytes } => {

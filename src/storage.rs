@@ -7,19 +7,22 @@ pub fn schema_text(schema: &Schema) -> String {
     let mut text = format!("CREATE TABLE {} (\n", schema.name);
     for (i, col) in schema.columns.iter().enumerate() {
         let kind = match col.data_type.kind {
+            Kind::Null => "NULL".into(),
             Kind::Int { min, max } => format!("INT MIN {min} MAX {max}"),
             Kind::Float { min, max } => format!("FLOAT MIN {min:e} MAX {max:e}"),
             Kind::String { max_bytes } => format!("STRING({max_bytes})"),
         };
         let _ = write!(
             text,
-            "  {} {} {}",
+            "  {} {}{}",
             col.name,
             kind,
-            if col.data_type.nullable {
-                "NULL"
+            if matches!(col.data_type.kind, Kind::Null) {
+                ""
+            } else if col.data_type.nullable {
+                " NULL"
             } else {
-                "NOT NULL"
+                " NOT NULL"
             }
         );
         if i == schema.primary_key {

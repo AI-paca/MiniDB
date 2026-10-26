@@ -1,0 +1,40 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net"><diagram id="t8" name="08-Общее">
+<mxGraphModel dx="1400" dy="900" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1400" pageHeight="950" math="0" shadow="0">
+<root>
+<mxCell id="0" /><mxCell id="1" parent="0" />
+
+<mxCell id="t" value="Что за что отвечает и чего в базе нет" style="text;html=1;fontSize=18;fontStyle=1;align=left;" vertex="1" parent="1"><mxGeometry x="40" y="20" width="700" height="30" as="geometry" /></mxCell>
+
+<mxCell id="l1" value="Уровень команд" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="40" y="70" width="320" height="300" as="geometry" /></mxCell>
+<mxCell id="l1a" value="ввод строки, история, дополнение&lt;br&gt;&lt;i&gt;только в обычном терминале&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l1"><mxGeometry x="20" y="45" width="280" height="50" as="geometry" /></mxCell>
+<mxCell id="l1b" value="разбор текста команды&lt;br&gt;слова и строки в кавычках&lt;br&gt;дерево условия со скобками" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l1"><mxGeometry x="20" y="105" width="280" height="65" as="geometry" /></mxCell>
+<mxCell id="l1c" value="исполнение: значения приводятся&lt;br&gt;к типу колонки, вывод таблицей" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l1"><mxGeometry x="20" y="180" width="280" height="55" as="geometry" /></mxCell>
+
+<mxCell id="l2" value="Уровень правил" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="390" y="70" width="320" height="300" as="geometry" /></mxCell>
+<mxCell id="l2a" value="каталог таблиц&lt;br&gt;уникальность ключа и выдача номеров&lt;br&gt;проверка ссылок&lt;br&gt;запрет удаления строки, на которую ссылаются" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l2"><mxGeometry x="20" y="45" width="280" height="85" as="geometry" /></mxCell>
+<mxCell id="l2b" value="подготовка условия и перебор&lt;br&gt;соединение двух таблиц" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l2"><mxGeometry x="20" y="140" width="280" height="50" as="geometry" /></mxCell>
+<mxCell id="l2c" value="копия базы и восстановление&lt;br&gt;замок на каталог" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l2"><mxGeometry x="20" y="200" width="280" height="50" as="geometry" /></mxCell>
+
+<mxCell id="l3" value="Уровень хранения" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8fafc;strokeColor=#64748b;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="740" y="70" width="320" height="300" as="geometry" /></mxCell>
+<mxCell id="l3a" value="таблица: указатель, свободные слоты,&lt;br&gt;рабочий буфер, счётчик номеров" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l3"><mxGeometry x="20" y="45" width="280" height="55" as="geometry" /></mxCell>
+<mxCell id="l3b" value="версия: файл, ширина слота,&lt;br&gt;свой дескриптор" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l3"><mxGeometry x="20" y="110" width="280" height="50" as="geometry" /></mxCell>
+<mxCell id="l3c" value="схема и типы: что вообще допустимо&lt;br&gt;правила смены схемы" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l3"><mxGeometry x="20" y="170" width="280" height="50" as="geometry" /></mxCell>
+<mxCell id="l3d" value="слот: заголовок и значения&lt;br&gt;по готовым смещениям" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="l3"><mxGeometry x="20" y="230" width="280" height="50" as="geometry" /></mxCell>
+
+<mxCell id="side" value="Рядом, но не в работе базы" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#eef2ff;strokeColor=#6366f1;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="1090" y="70" width="270" height="300" as="geometry" /></mxCell>
+<mxCell id="side1" value="отдельная команда: по файлу схемы&lt;br&gt;выдать готовый исходник со структурой&lt;br&gt;для другой программы&lt;br&gt;&lt;br&gt;обратно в базу ничего не загружается,&lt;br&gt;компилятор во время работы базы&lt;br&gt;не запускается" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=11;align=left;spacingLeft=10;" vertex="1" parent="side"><mxGeometry x="20" y="45" width="230" height="145" as="geometry" /></mxCell>
+
+<mxCell id="no" value="Чего в базе нет — чтобы не искали на схемах" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fee2e2;strokeColor=#ef4444;fontStyle=1;align=left;verticalAlign=top;spacingLeft=12;spacingTop=10;" vertex="1" parent="1"><mxGeometry x="40" y="410" width="1320" height="240" as="geometry" /></mxCell>
+<mxCell id="no1" value="— файла-каталога: список таблиц берётся из имён файлов схем&lt;br&gt;— индекса на диске: он только в памяти и строится при открытии&lt;br&gt;— индекса по ссылкам: проверка при удалении идёт перебором детей&lt;br&gt;— журнала и отката: пакетная операция не откатывается" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="no"><mxGeometry x="20" y="45" width="630" height="170" as="geometry" /></mxCell>
+<mxCell id="no2" value="— упорядочивания выдачи: порядок физический&lt;br&gt;— удаления и переименования колонок&lt;br&gt;— смены колонки-ключа&lt;br&gt;— сборки и загрузки модулей во время работы&lt;br&gt;— быстрого пути по ключу в самой выборке" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffffff;strokeColor=#94a3b8;fontSize=12;align=left;spacingLeft=10;" vertex="1" parent="no"><mxGeometry x="670" y="45" width="630" height="170" as="geometry" /></mxCell>
+
+<mxCell id="e1" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#475569;" edge="1" parent="1" source="l1" target="l2"><mxGeometry relative="1" as="geometry" /></mxCell>
+<mxCell id="e2" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;strokeColor=#475569;" edge="1" parent="1" source="l2" target="l3"><mxGeometry relative="1" as="geometry" /></mxCell>
+<mxCell id="e3" value="читает схемы" style="edgeStyle=orthogonalEdgeStyle;html=1;endArrow=block;dashed=1;strokeColor=#6366f1;fontSize=10;" edge="1" parent="1" source="l3" target="side"><mxGeometry relative="1" as="geometry" /></mxCell>
+
+</root>
+</mxGraphModel>
+</diagram>
+
+</mxfile>

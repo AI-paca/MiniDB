@@ -157,6 +157,10 @@ impl Table {
     }
 
     pub fn open(root: &Path, name: &str) -> Result<Self> {
+        Self::open_schema(root, name, None)
+    }
+
+    fn open_schema(root: &Path, name: &str, resolved: Option<&Schema>) -> Result<Self> {
         crate::types::identifier(name)?;
         let schema_path = crate::storage::schema_path(root, name)?;
         let text = fs::read_to_string(&schema_path)?;
@@ -179,7 +183,11 @@ impl Table {
                 highest_id = highest_id.max(id);
             }
         }
-        let schema = Schema::from_text(&text)?;
+        let schema = if let Some(schema) = resolved {
+            schema.clone()
+        } else {
+            Schema::from_text(&text)?
+        };
         if schema.name != name {
             return Err("Имя файла схемы не совпадает с именем таблицы".into());
         }
@@ -241,6 +249,47 @@ impl Table {
         };
         table.rebuild_loaded_index()?;
         Ok(table)
+    }
+
+    // Текстовые NULL остаются теми же полями при выборе типа. Меняются только
+    // каталог и внутренний Layout; файлов строк не нужно перекодировать.
+    pub(crate) fn resolve_types(&mut self, schema: &Schema) -> Result<()> {
+        if self.schema == *schema {
+            return Ok(());
+        }
+        self.check_ready()?;
+        crate::schema::check_resolution(&self.schema, schema)?;
+        self.sync()?;
+        let root = self.schema_path.parent().ok_or("Нет каталога схемы")?;
+        let mut resolved = Self::open_schema(root, &schema.name, Some(schema))?;
+        resolved.write_barriers = self.write_barriers;
+        // После проверок и загрузки новое описание можно сохранить атомарно.
+        if let Err(error) = self.save_schema(schema, self.highest_id, &self.empty_versions) {
+            self.write_failed = true;
+            return Err(error);
+        }
+        *self = resolved;
+        Ok(())
+    }
+
+    fn infer_for_values(
+        &mut self,
+        values: &[Value<'_>],
+        flag: u8,
+        old_id: Option<i64>,
+    ) -> Result<()> {
+        let entries: Vec<_> = values.iter().copied().enumerate().collect();
+        let Some(schema) = self.schema.infer_types(&entries)? else {
+            return Ok(());
+        };
+        let layout = Layout::from_schema(&schema)?;
+        let mut bytes = vec![0; layout.row_size];
+        record::encode_validated_layout(&layout, &schema, values, flag, &mut bytes)?;
+        let id = values[schema.primary_key].int()?;
+        if self.index.contains_key(&id) && old_id != Some(id) {
+            return Err("PRIMARY KEY дублируется".into());
+        }
+        self.resolve_types(&schema)
     }
 
     pub fn rebuild_index(&mut self) -> Result<()> {
@@ -497,6 +546,14 @@ impl Table {
     // Добавление записи с возвратом её смещения.
     pub fn insert(&mut self, vals: &[Value<'_>]) -> Result<u64> {
         let values = self.normalize_insert(vals)?;
+        if self
+            .schema
+            .columns
+            .iter()
+            .any(|c| matches!(c.data_type.kind, crate::Kind::Null))
+        {
+            self.infer_for_values(&values, FLAG_FREE, None)?;
+        }
         self.prepare(&values, FLAG_FREE)?;
         self.insert_prepared()
     }
@@ -557,6 +614,18 @@ impl Table {
             return Err("Неверное число полей".into());
         }
         let column = self.schema.primary_key;
+        if self
+            .schema
+            .columns
+            .iter()
+            .any(|c| matches!(c.data_type.kind, crate::Kind::Null))
+        {
+            let mut values = vals.to_vec();
+            if values[column] == Value::Null {
+                values[column] = Value::Int(pk);
+            }
+            self.infer_for_values(&values, FLAG_LIVE, Some(pk))?;
+        }
         let id = if vals.get(column) == Some(&Value::Null) {
             let mut values = vals.to_vec();
             values[column] = Value::Int(pk);

@@ -1,9 +1,9 @@
-"""Две страницы отчёта. Генерация: python3 docs/make_report.py (нужен pycairo)."""
+"""Две страницы отчёта. Генерация: python3 scripts/make_report.py (нужен pycairo)."""
 from pathlib import Path
 import csv
 import cairo
 
-ROOT = Path(__file__).resolve().parent
+ROOT = Path(__file__).resolve().parent.parent / 'docs'
 WIDTH, HEIGHT = 595, 842
 surface = cairo.PDFSurface(str(ROOT / 'report.pdf'), WIDTH, HEIGHT)
 ctx = cairo.Context(surface)
@@ -110,12 +110,12 @@ for name, value in [('Полный просмотр', bench['scan_ms'] + ' мс'
     y += 23
 paragraph('Это один локальный замер, не гарантия скорости на другой машине. Воспроизведение: cargo run --release --example bench -- scratch/bench 5000. Для другого числа записей нужен новый каталог.')
 title('Проверенное поведение')
-paragraph('79 тестов: CRUD и рестарт; фильтры и NULL; PK/auto-ID, FK, RESTRICT и JOIN; backup/restore и блокировка; числа, STRING и UTF-8; консоль, sample.sh, эволюция схем и перенос старого формата. SHOW DATABASE показывает абсолютный путь активной базы.')
+paragraph('Автотесты: CRUD и рестарт; фильтры и NULL; PK/auto-ID, FK, RESTRICT и JOIN; backup/restore и блокировка; числа, STRING и UTF-8; консоль, sample.sh, эволюция схем и перенос старого формата. SHOW DATABASE показывает абсолютный путь активной базы.')
 paragraph('Проверены UTF-8 и escapes, повторное открытие после правки в IDE, повреждённые заголовки и поля, коллизия временного файла, backup всех версий и отказ restore без потери прежних данных. Тесты бинарных слотов остались в binary.')
 title('Инженерное расширение')
 paragraph('SQL-подобный парсер, консоль и Docker с постоянным томом. Контейнер собирает и проверяет код, запускает консоль непривилегированным пользователем. Запуск: docker compose run --build --rm minidb. Инструкции запуска sample.sh внутри контейнера есть в README.')
 title('Границы реализации')
 paragraph('Индекс требует O(числа живых записей) памяти. До 256 полей; STRING по умолчанию 64 байта, максимальная ёмкость и длина — 65535 байт. Пакет UPDATE/DELETE ограничен 16 МиБ. Нет составных PK, self JOIN, vacuum и многооператорных транзакций.')
-paragraph('ALTER ADD COLUMN добавляет nullable-поле в конец и новый сегмент; старые строки читают его как NULL. Генератор создаёт Rust-код из схемы; потребитель компилирует его своим build.rs. Типизированная запись проверяет VERSION. Перенос UPDATE между сегментами не транзакционен. В seed до sync записи находятся только в памяти. Физическое отключение питания не тестировалось.')
-paragraph('Материалы: README.md, sample.sh, docs/schema.dbml, docs/schema.svg, docs/benchmark.csv.', size=10)
+paragraph('ALTER ADD добавляет nullable-поле в конец. Без типа оно остаётся NULL до первого ненулевого INSERT/UPDATE; выбранный тип сохраняется. Исходные поля не переопределяются. Генератор создаёт Rust-код из схемы; потребитель компилирует его своим build.rs. Типизированная запись проверяет VERSION. Перенос UPDATE между сегментами не транзакционен. В seed до sync записи находятся только в памяти. Физическое отключение питания не тестировалось.')
+paragraph('Материалы: README.md, sample.sh, docs/COMMANDS.md, docs/schema.dbml, docs/benchmark.csv.', size=10)
 surface.finish()
