@@ -1,369 +1,357 @@
 # MiniDB
 
-Файловая база на Rust: SQL-консоль, CRUD, PK/FK, JOIN, индекс и резервные копии.
-Rust/Cargo **1.89+**, внешних Rust-зависимостей нет.
+Лабораторная работа №1: собственная файловая мини-СУБД на Rust.
+Основная ветка — `main`; прежняя бинарная реализация сохранена в `binary`.
+Рабочие данные — читаемые UTF-8 файлы. Готовые СУБД, ORM и JSON-хранилища не используются.
 
-Ветка **text** хранит данные читаемым UTF-8 без расширений. Ветка **binary**
-сохраняет бинарный формат и его тесты. Переключение: `git switch binary` /
-`git switch text`; `./run.sh` пересобирает консоль для выбранной ветки.
+## Запуск
 
-## Соответствие ТЗ: максимум 12 баллов
-
-Статус «да/нет» относится к указанному пункту. Уровни оценки накопительные:
-строки не суммируются, бонусы не заменяют базовые требования. Shell-команды
-выполняются в терминале, SQL — после приглашения `minidb>`.
-
-| ТЗ | Команды / материалы для проверки | Выполнено полностью |
-| --- | --- | --- |
-| 4: собственные файлы, CREATE TABLE, INSERT, сохранность после перезапуска; без готовой СУБД и JSON-хранилища | `./run.sh sample`; `CREATE TABLE notes (id INT PRIMARY KEY, name STRING);` → `INSERT INTO notes VALUES (NULL, 'test');` → `EXIT;` → повторный запуск и `SELECT * FROM notes;` | Да |
-| 5: SELECT и фильтры `=`, `!=`, `>`, `<`, `>=`, `<=` | `SELECT * FROM experiments WHERE accuracy >= 0.8;` | Да |
-| 6: полный CRUD, включая UPDATE и DELETE | `UPDATE notes SET name = 'changed' WHERE id = 1;` → `DELETE FROM notes WHERE id = 1;` | Да |
-| 7: PK, авто-ID, запрет дублей, INT/STRING/FLOAT, обработка ошибок | Повторить `INSERT INTO notes VALUES (1, 'duplicate');` дважды; `DESCRIBE experiments;` | Да |
-| 8: CLI, datasets/models/experiments, минимум 5/5/20 записей | `./sample.sh scratch/defense`; `./run.sh scratch/defense`; `SHOW TABLES;`, `SELECT * FROM experiments;` | Да |
-| 8: FK experiments → datasets/models и проверка ссылочной целостности | `INSERT INTO experiments VALUES (NULL, 999, 1, 0.9, 'running');` в новом примере — ожидается ошибка FK | Да |
-| 9: INNER JOIN, AND/OR, выбор столбцов | `SELECT id, accuracy FROM experiments WHERE accuracy >= 0.8 AND (status = 'completed' OR status = 'running');`; `SELECT experiments.id, datasets.name FROM experiments INNER JOIN datasets ON experiments.dataset_id = datasets.id;` | Да |
-| 9: архитектура, README, схема dbdiagram с PK/FK | [Модули](src/), [DBML](docs/schema.dbml), [скриншот схемы](docs/schema.png), [диаграммы](docs/) | Да |
-| 10: индекс id → смещение, сравнение scan/index на 1000+, backup/restore | `cargo run --locked --offline --release --example bench -- scratch/bench 5000`; `BACKUP first;` → `RESTORE first TO 'scratch/restored';` | Да: функции реализованы; [локальный замер](docs/benchmark.csv) относится к text, замер binary сохранён в той ветке |
-| 11: существенное расширение — SQL-like парсер, автотесты, генератор данных и Rust-кода | `cargo test --locked --offline --all-targets`; `cargo run --locked --offline -- gen sample --out scratch/generated`; пример `bench` | Да: перечисленные расширения реализованы |
-| 12: серьёзный инженерный слой поверх базы уровня 9.5/10 | `docker compose run --build --rm minidb sh /usr/local/bin/sample.sh /data/sample`; `docker compose run --rm minidb minidb /data/sample` | Нет: Docker-конфигурация есть; полный сценарий защиты в контейнере не проверен |
-| Сдача: исходники со ссылкой GitHub, тестовое хранилище, README, PDF на 1–2 страницы | `git remote -v`; [sample](sample/), [отчёт](docs/report.pdf) | Нет: файлы есть, ссылка на опубликованный GitHub-репозиторий не указана |
-
-## Схема таблиц
-
-![Схема dbdiagram.io: datasets и models связаны с experiments через внешние ключи](docs/schema.png)
-
-`experiments.dataset_id` ссылается на `datasets.id`, `experiments.model_id` —
-на `models.id`. Определения полей и ограничения хранятся в `sample/*.schema.sql`.
-
-## Открыть готовую базу
+Нужен Rust/Cargo 1.89+ либо Docker Compose. Внешних Rust-зависимостей нет.
 
 ```sh
-./run.sh
+./run.sh sample
 ```
 
-Без аргументов открывается **`sample/`**. При запуске печатается абсолютный путь.
-В консоли:
+В `sample/` уже находятся **5 datasets, 5 models и 20 experiments**.
+Первые три experiments совпадают с примером ТЗ. Консоль показывает абсолютный путь базы.
+`./run.sh` без аргументов открывает тот же `sample/`.
+
+Создать отдельную базу для защиты:
+
+```sh
+./sample.sh scratch/defense
+./run.sh scratch/defense
+```
+
+`sample.sh` создаёт новый каталог и отказывается перезаписывать существующий.
+Пустую базу можно создать командой `./run.sh scratch/empty` или `OPEN 'scratch/empty';`.
+Справка: `./run.sh --help`, внутри консоли — `HELP;`.
+
+### Docker
+
+```sh
+docker compose build
+docker compose run --rm minidb sh /usr/local/bin/sample.sh /data/defense
+docker compose run --rm minidb minidb /data/defense
+```
+
+Наполнение выполняется один раз. Для повторного открытия нужна только последняя команда.
+Том `minidb-data` сохраняет базу между контейнерами. CLI работает от пользователя без root.
+Команды SQL вводятся в этой же консоли; `OPEN`, `BACKUP`, `RESTORE`, `ALTER`, `VACUUM`
+и генератор Rust также работают внутри контейнера:
+
+```sh
+docker compose run --rm minidb minidb gen /data/defense --out /data/generated
+docker compose run --rm minidb minidb-bench /data/bench 5000
+```
+
+Полная автоматическая проверка Docker без затрагивания рабочей базы:
+
+```sh
+bash scripts/check-docker.sh
+```
+
+Скрипт создаёт отдельный проект Compose и удаляет только собственный тестовый том.
+Он проверяет все команды, данные 5/5/20, CRUD, фильтры, JOIN, ошибки PK/FK,
+ALTER, VACUUM, backup/restore, уборку поколений и сохранность после перезапуска.
+
+## Таблицы и связи
+
+| Таблица | Поля |
+| --- | --- |
+| datasets | id, name, task, size |
+| models | id, name, version |
+| experiments | id, dataset_id, model_id, accuracy, status |
+
+`id` — INT PRIMARY KEY с авто-ID при NULL/пропуске. Повторные ключи отклоняются.
+`experiments.dataset_id` ссылается на `datasets.id`, `model_id` — на `models.id`.
+Несуществующие FK запрещены; удаление родителя со ссылками также запрещено (RESTRICT).
+
+![Схема трёх таблиц с PK/FK из dbdiagram.io](docs/schema.png)
+
+[DBML для dbdiagram.io](docs/schema.dbml). Точные типы и ограничения — в `sample/*_schema`.
+Типы: INT (i64), FLOAT (f64), STRING(n) (до n байт UTF-8); есть NULL/NOT NULL и MIN/MAX.
+
+## Сценарий защиты
+
+После создания `scratch/defense` выполните:
 
 ```sql
 SHOW DATABASE;
-DESCRIBE datasets;
+SHOW TABLES;
+DESCRIBE experiments;
+INSERT INTO datasets (name, task, size) VALUES ('demo', 'classification', 43);
 SELECT * FROM datasets;
-SELECT * FROM datasets WHERE name = 'lol';
+SELECT id, name FROM datasets WHERE size >= 100;
+SELECT id, accuracy FROM experiments
+WHERE accuracy >= 0.88 AND (status = 'completed' OR id = 3);
+SELECT experiments.id, datasets.name
+FROM experiments INNER JOIN datasets ON experiments.dataset_id = datasets.id;
+UPDATE datasets SET size = 44 WHERE name = 'demo';
+DELETE FROM datasets WHERE name = 'demo';
+INSERT INTO experiments VALUES (NULL, 999, 1, 0.9, 'running');
+EXIT;
 ```
 
-`SHOW DATABASE` показывает активную базу, `DESCRIBE` — её настоящие файлы и поля.
-`OPEN 'другой/каталог'` переключает базу; отсутствующий каталог создаётся пустым.
-Справка: `./run.sh -h` или `help` в консоли.
-
-`sample.sh` **создаёт новый** пример с 5 datasets, 5 models и 20 experiments:
-
-```sh
-./sample.sh scratch/new-sample
-./run.sh scratch/new-sample
-```
-
-При существующем каталоге скрипт отказывается его перезаписывать и показывает
-команду открытия. Готовая `sample/` может содержать добавленные пользователем строки;
-для работы с ней повторный запуск sample.sh не требуется. Все три таблицы нового
-примера создаются сразу в v1 с обязательными полями.
-
-В Windows консоль запускается напрямую:
-
-```powershell
-cargo build --locked --offline --release
-.\target\release\minidb.exe sample
-```
-
-Для shell-скриптов нужен Git Bash или WSL. На Unix консоль поддерживает историю,
-стрелки и Tab; на остальных платформах используется построчный ввод.
-
-## Где находятся данные
-
-```text
-sample/
-  datasets.schema.sql     # определение таблицы, SQL для IDE
-  datasets                # сами данные, обычный UTF-8
-  models.schema.sql
-  models
-  experiments.schema.sql
-  experiments
-  v2/                     # возникает после ADD COLUMN непустой таблицы
-    datasets              # строки следующей версии, также UTF-8
-  .lock                   # блокировка открытой базы
-  .history                # история консоли
-```
-
-Откройте [sample/datasets](sample/datasets) непосредственно в IDE:
-
-```text
-# MiniDB text; VERSION 1
-# state id name task size
-LIVE    1  "iris" "classification" 150
-LIVE    6  "lol"  "fall"           43
-```
-
-Разделитель в настоящем файле — Tab. Это рабочие файлы хранилища: INSERT/UPDATE
-меняют их, RESTORE восстанавливает их. Отдельного бинарного файла с теми же
-данными нет. Схема остаётся в `.schema.sql`; файлы данных не скрыты в .gitignore.
-Старые базы `data/*.legacy` не участвуют в работе.
-
-Для ручной правки сначала закройте консоль: открытая база держит рабочие строки
-в памяти. После открытия IDE-изменения читаются из этих файлов. Пустая строка,
-строка `"NULL"` и значение NULL различаются. Кавычки, Tab, переносы строк,
-обратная косая черта и управляющие символы экранируются (`\n`, `\t`, `\u{0}`).
-LIVE — действующая запись; DEAD — удалённая или перенесённая, FREE — свободный слот.
-
-В текущей схеме datasets обязательны `name`, `task`, `size`. Пропущенные поля
-получают NULL; поэтому корректная вставка имеет вид:
-
-```sql
-INSERT INTO datasets (name, task, size) VALUES ('lol', 'fall', 43);
-```
-
-Пропущенный `id` генерируется автоматически. Ошибка обязательного поля называет
-колонку, например `Поле datasets.task обязательно (NOT NULL)`.
-
-## SQL
+Последний INSERT должен показать ошибку FK. Затем заново запустите
+`./run.sh scratch/defense` и выполните `SELECT * FROM experiments;`:
+остаются 20 записей, ошибочная строка не сохранена. Созданные таблицы переживают перезапуск.
+Для демонстрации собственного CREATE:
 
 ```sql
 CREATE TABLE notes (id INT PRIMARY KEY, name STRING(64) NOT NULL, score FLOAT);
-INSERT INTO notes (name, score) VALUES ('Alice', 1);
+INSERT INTO notes (name, score) VALUES ('test', 0.9);
 ALTER TABLE notes ADD COLUMN comment STRING(128) NULL;
-SELECT id, name FROM notes WHERE score >= 0.8 AND comment IS NULL;
-SELECT * FROM notes WHERE NOT (score < 0.5) OR comment IS NOT NULL;
-UPDATE notes SET score = 0.95 WHERE id = 1;
+UPDATE notes SET comment = 'saved' WHERE id = 1;
 DELETE FROM notes WHERE id = 1;
-SELECT experiments.id, datasets.name
-FROM experiments JOIN datasets ON experiments.dataset_id = datasets.id;
-```
-
-Типы: INT=i64, FLOAT=f64, STRING(n)=до n байт UTF-8. STRING без размера — 64 байта;
-максимум STRING — 65535 байт. Есть NULL/NOT NULL, MIN/MAX, PRIMARY KEY и REFERENCES.
-Целые SQL-литералы нормализуются для FLOAT; порядок перечисленных колонок INSERT
-учитывается, остальные поля получают NULL. Имена колонок ищутся без учёта регистра.
-
-NOT выполняется раньше AND, AND — раньше OR. Сравнения с NULL дают UNKNOWN,
-который не проходит WHERE даже после NOT. Для заполненности используйте IS NOT NULL.
-JOIN соединяет INT слева с PK справа; WHERE относится к левой таблице.
-Неоднозначные поля требуют `таблица.поле`. Длинные значения в консоли обрезаются
-символом `…` только при выводе; данные не меняются.
-
-После ошибки CLI сразу показывает пример нужной команды с именами таблиц
-и столбцов текущей базы. Для INSERT учитываются обязательные поля и типы.
-DELETE удаляет строки с данными; DROP COLUMN пока не реализован.
-
-Справка CLI: [docs/COMMANDS.md](docs/COMMANDS.md), автоматически из `minidb --help`.
-
-## Версии схемы и формат
-
-Источником определения таблицы служит `.schema.sql`: CREATE TABLE, VERSION и
-COLUMNS_AT_VERSION. Схема без VERSION считается v1. Прежнее имя `имя.schema`
-поддерживается, но бинарные сегменты `.data` в этой ветке отклоняются с указанием
-ветки binary. Посторонние SQL/temp-файлы не объявляют таблицы, дубли отклоняются.
-
-ADD COLUMN добавляет только nullable-поля в конец и увеличивает VERSION.
-NULL можно не писать: ADD всегда создаёт nullable-поле. Удаление, переименование, перестановка и смена уже заданного типа
-запрещены `check_evolution`; DEFAULT пока не поддерживается. Пустые прошлые версии
-отмечаются в схеме комментарием `-- minidb-empty-version: n`, без пустых файлов.
-Исчезновение сегмента без такой отметки остаётся ошибкой.
-
-Для нового столбца можно вообще не указывать тип:
-
-```sql
-ALTER TABLE datasets ADD COLUMN comment;
-UPDATE datasets SET comment = 'MiXeD Текст' WHERE id = 1;
-DESCRIBE datasets;
-```
-
-До первого ненулевого значения тип — NULL. Первый успешный INSERT/UPDATE
-фиксирует INT, FLOAT или STRING, сохраняя nullable. String получает ёмкость
-не меньше 64 байт и длины первого значения. NULL сам по себе тип не выбирает.
-Тип не сбрасывается после очистки/удаления всех значений. Ошибка проверки значений/PK/FK/валидатора или
-UPDATE без совпавших строк не фиксирует тип. Имена и числа старых полей не меняются.
-
-Этот режим доступен только полям, добавленным после v1: это проверяется по
-COLUMNS_AT_VERSION. Поля исходной схемы и явно типизированные поля сохраняют тип.
-Разрешение отложенного NULL не увеличивает VERSION и не меняет историю ADD COLUMN;
-текстовые NULL остаются совместимыми с выбранным типом. Rust-код генерируется
-после определения всех отложенных типов: до этого generate возвращает объяснение.
-
-Ключевые слова распознаются через отдельную UPPERCASE-копию токенов; строки и
-пути читаются из оригинала, поэтому регистр и содержимое значений сохраняются.
-
-Старые записи не переписываются: INSERT пишет в последний сегмент, UPDATE
-из старого сегмента переносит изменённую строку и помечает прежнюю DEAD.
-Логически неизменившийся UPDATE возвращает 0 и не переносит запись.
-GET, SCAN, индекс и backup учитывают все непустые сегменты. Для пустых прошлых
-версий остаётся только отметка в схеме.
-
-На диске — заголовок VERSION и строки `LIVE<Tab>id<Tab>...`, `DEAD<Tab>...`,
-`FREE`. Для v1 путь — имя таблицы, для vN — `vN/имя`. Внутренние Layout и Row
-остались общим представлением в памяти для динамического API и генератора.
-Ни little-endian числа, ни bitmap, ни padding на диск не записываются.
-Индекс связывает PK с `(версия, смещение в памяти)`, а не смещением UTF-8 файла.
-Старая запись под текущей схемой возвращает NULL для добавленного поля.
-
-Открытие проверяет UTF-8, заголовок, число полей, типы, строковые ёмкости и PK.
-Числовые MIN/MAX проверяются при записи и явно через `Row::validate` / `Table::check`.
-Layout проверяется перед циклом CHECK/UPDATE, в цикле — значения строк.
-
-## Rust-код потребителя
-
-```sh
-cargo run --locked --offline -- gen sample --out scratch/generated
-```
-
-Генератор читает схемы и пишет tables.rs с модулем на таблицу, например
-`experiments::Experiment`: публичные поля, Default, VERSION, LAYOUT, SCHEMA,
-from_row, to_values, insert/update и scan. Nullable-поля и поля после v1 — Option.
-Позиционного конструктора нет; используйте struct-литералы с `..Default::default()`.
-
-API генератора: `generate(&Schema) -> Result<String>` и
-`generate_dir(path) -> Result<String>`. В build.rs потребителя:
-
-```rust,ignore
-fn main() -> minidb::Result<()> {
-    let out = std::path::PathBuf::from(std::env::var_os("OUT_DIR").unwrap());
-    std::fs::write(out.join("tables.rs"), minidb::codegen::generate_dir("../db")?)?;
-    println!("cargo:rerun-if-changed=../db");
-    Ok(())
-}
-```
-
-minidb нужен и в dependencies, и в build-dependencies. В коде:
-`include!(concat!(env!("OUT_DIR"), "/tables.rs"));`. Пользовательские методы находятся
-в отдельном impl и не генерируются. Полный пример: [examples/simulator](examples/simulator).
-
-```sh
-cargo run --offline --manifest-path examples/simulator/Cargo.toml -- scratch/simulator
-```
-
-`MINIDB_SCHEMA_DIR` задаёт build.rs абсолютный путь к другой базе. Создание из
-готовой схемы vN создаёт пустые сегменты всей истории. Компилирует только потребитель,
-rustc внутри БД не запускается. БД и сгенерированный код используют одни текстовые файлы через общий Database/Row.
-
-Старый тип читает свой префикс текущей схемы; новый получает None из старой записи.
-Если VERSION самого каталога ниже VERSION потребителя, чтение возвращает ошибку.
-Типизированные INSERT/UPDATE требуют совпадения VERSION. Сгенерированный
-`update(db, id)` меняет только поля вне PK; значение PK в структуре игнорируется. Для ручной записи через
-динамический API используйте insert_versioned/check_version.
-
-Сгенерированный scan проверяет схему один раз перед циклом. Отдельный from_row
-сверяет имена/типы/ширины без полной проверки схемы на каждой строке.
-
-## Валидаторы
-
-`Database::open_with` принимает функции `fn(Row) -> Result<()>` по именам.
-Схема с VALIDATOR требует регистрации функции. Генератор выдаёт validator_adapter,
-который вызывает `from_row(row)?.validate()`; validate определяет потребитель.
-VALIDATOR отсутствует в грамматике команд CLI; атрибут сохранённой схемы
-доступен только через библиотеку. CLI сообщает имя необходимой функции.
-OPEN/RESTORE также не обходят отсутствующие правила. При INSERT валидатор получает
-подготовленную FREE-строку (`live() == false`), при UPDATE — LIVE.
-
-## Backup и гарантии записи
-
-```sql
+VACUUM notes;
 BACKUP first;
 RESTORE first TO 'scratch/restored';
 ```
 
-Короткое имя в CLI разрешается возле текущей базы: `sample_backups/first`.
-После OPEN другой базы укажите явный путь к прежней копии. Статический
-`Database::restore` для совместимости разрешает короткое имя возле назначения;
-для другого источника передайте явный путь или `db.backup_location(name)`.
+DELETE удаляет строки; без WHERE — все строки таблицы. DROP COLUMN не реализован.
+ADD COLUMN разрешён только в конец с допуском NULL. Без заданного типа новый столбец
+остаётся NULL до первого успешного ненулевого INSERT/UPDATE, затем его тип фиксируется.
+При ошибке CLI сразу показывает пример команды. Регистр ключевых слов свободный;
+содержимое строк и путей сохраняется. Сравнения: `=`, `!=`, `>`, `<`, `>=`, `<=`;
+также AND/OR, NOT, IS NULL / IS NOT NULL. JOIN: INT слева → PK справа.
 
-Backup синхронизирует и копирует схемы и все сегменты. Без таблиц возвращается
-ошибка; таблица со схемой и нулём строк допустима. Копия не перезаписывается.
-Restore проверяет временную копию до замены назначения и возвращает прежний
-каталог при ошибке установки. CLI умеет восстанавливать в текущую базу: закрывает
-её до замены и открывает заново при ошибке. В библиотечном статическом restore
-назначение должно быть закрыто. Суффиксы добавляются
-к полному имени: `my.db.restore.tmp`, `my.db.restore.old`.
+## Хранение и архитектура
 
-Обычная запись сохраняет сегмент во временный UTF-8 файл, выполняет sync и
-заменяет основной файл через rename. При ошибке до rename прежний файл остаётся
-на месте. Имеющийся `.tmp` не перезаписывается и не удаляется. В Unix каталог
-синхронизируется после замены. DELETE сохраняет DEAD; свободные слоты переиспользуются.
-Максимум auto-ID восстанавливается из LIVE/DEAD и checkpoint схемы.
-
-Для генерации: `./run.sh --no-barriers каталог` или
-`db.set_write_barriers(false)?`. В этом режиме изменения копятся в памяти;
-финальный `sync()` сохраняет их. `set_write_barriers(true)?` также выполняет sync.
-sample.sh и benchmark используют этот режим при заполнении; поиск измеряется
-после финального sync. При аварийном завершении seed до sync данные теряются.
-
-UPDATE возвращает число фактически изменённых строк; no-op даёт 0. Предел пакета —
-16 МиБ внутреннего представления. SELECT/UPDATE/JOIN переиспользуют буферы.
-`join` соединяет левое INT-поле с PK справа; `join_on` проверяет имя правой колонки.
-
-Это демонстрационная реализация: сегменты целиком загружаются в RAM, запись
-пересохраняет текст сегмента. Benchmark сравнивает scan и индекс в памяти;
-цифры не характеризуют дисковый случайный доступ и не сравниваются с binary.
-**WAL и транзакционного отката нет.** При ошибке I/O пакет по нескольким сегментам
-или ADD COLUMN может примениться частично. После ошибки записи нужен rebuild_index
-или повторное открытие. Физическое отключение питания не тестировалось.
-
-## Структура и проверки
-
-- `src/database/` — операции базы, подготовка UPDATE, backup/restore.
-- `src/table.rs` — сегменты и PK-индекс; `src/text_file.rs` — чтение/запись UTF-8.
-- `src/schema.rs`, `layout.rs`, `record.rs` — схема, раскладка и кодирование.
-- `src/sql.rs`, `query.rs` — SQL и фильтры.
-- `src/codegen.rs` — генератор Rust-кода из схем.
-- `src/main.rs`, `display.rs`, `terminal.rs`, `completion.rs` — консоль.
-- `sample/` — одна готовая рабочая база.
-- `tests/` — проверки; `examples/` — benchmark, миграция и потребитель.
-- `docs/` — [справка CLI](docs/COMMANDS.md), [инварианты](docs/invariants.md),
-  [диаграммы](docs/), [скриншот схемы](docs/schema.png), [DBML](docs/schema.dbml), [замер](docs/benchmark.csv),
-  [отчёт](docs/report.pdf).
-- `scripts/` — генерация справки и PDF: `bash scripts/generate-commands.sh`,
-  `python3 scripts/make_report.py` (для PDF нужен pycairo).
-
-Справочник команд собирает [GitHub Actions](.github/workflows/commands.yml):
-запускает CLI с `--help`, оборачивает вывод в Markdown и коммитит изменение
-только `docs/COMMANDS.md`. Workflow работает при изменениях исходников/генератора
-и через `workflow_dispatch`. Источник справки — `HELP` в `src/main.rs`.
-Сгенерированный Markdown вручную не редактируется.
-
-Локальная проверка workflow:
-
-```sh
-act workflow_dispatch --bind -W .github/workflows/commands.yml -j commands \
-  -P ubuntu-latest=catthehacker/ubuntu:act-24.04
+```text
+sample/
+  datasets_schema     CREATE TABLE, VERSION, GENERATION, счётчик auto-ID
+  datasets_1          текущие данные datasets, UTF-8
+  models_schema
+  models_1
+  experiments_schema
+  experiments_1
+  .lock               одна открытая база — один процесс
 ```
 
-В `act --bind` используются локальные исходники: checkout из GitHub и шаг коммита/
-отправки пропускаются. Сборка CLI и генерация выполняются в образе `rust:1.96`.
-Файлы `.drawio` и их workflow не меняются при генерации справки.
+Откройте [datasets_1](sample/datasets_1) в IDE: строки LIVE/DEAD/FREE, поля через Tab,
+строки в кавычках, управляющие символы экранированы. Для ручной правки закройте CLI.
+У каждой таблицы один текущий файл данных; его номер берётся только из GENERATION в схеме.
+
+ALTER переписывает живые строки, добавляя NULL, увеличивает VERSION и GENERATION.
+VACUUM убирает удалённые слоты и увеличивает только GENERATION; если убирать нечего,
+возвращает 0. Выбор типа отложенного столбца также перестраивает данные в новом поколении.
+Сначала синхронизируется новый файл, затем атомарно заменяется схема и синхронизируется
+каталог. После этого старый файл удаляется. При открытии удаляются осиротевшие поколения
+и служебные временные файлы. Потеря текущего файла даёт ошибку.
+
+- `sql.rs` разбирает команды; `main.rs` исполняет их и выводит результат.
+- `Database` проверяет PK/FK и валидаторы, выполняет выборку, JOIN и backup/restore.
+- `Table` хранит один Layout, список свободных слотов и индекс `id → offset`.
+- `TextFile` декодирует UTF-8 в слоты в RAM; обычный CRUD атомарно сохраняет тот же файл.
+- `Layout` и `Row` задают внутренние смещения и чтение значений.
+
+SELECT с равенством PK использует индекс и проверяет оставшееся условие.
+Другие условия просматривают живые слоты; диапазоны и разные ключи через OR требуют просмотра.
+UPDATE возвращает число фактически изменённых строк. Предел подготовленного пакета — 16 МиБ.
+Многооператорных транзакций и WAL нет; восстановление поколений относится к полной перезаписи.
+Старый формат сегментов не читается. Прежняя `sample` сохранена локально в
+`scratch/sample-before-generations`; её живые данные перенесены в новый формат.
+
+### Открытие и представление записей
+
+При открытии `Database` блокирует каталог, читает `*_schema` и файл указанного
+поколения. `TextFile` разбирает текст в `Cursor<Vec<u8>>`: все записи в памяти имеют
+фиксированный размер. Затем `Table` проходит слоты и строит PK-индекс, список свободных
+слотов и максимум auto-ID. Только после успешного чтения убираются сироты.
+Структура и PK проверяются при открытии. При проверке временной копии RESTORE
+вызывает `Table::check` для типов и ограничений полей. Аудита всех сохранённых FK
+при открытии нет: они проверяются при операциях через Database API.
+
+Три преобразования выполняют разные задачи:
+
+| Преобразование | Модуль | Что получается |
+| --- | --- | --- |
+| Текст схемы → Schema | `sql::stored_schema`, `schema.rs` | Колонки, ограничения, VERSION и GENERATION |
+| Schema → Layout | `layout.rs` | NULL-bitmap, ширины и смещения полей в RAM |
+| UTF-8 ↔ слоты в RAM | `text_file.rs`, `record.rs` | Читаемые файлы на диске и быстрый `Row::at(i)` |
+| Schema → исходник Rust | `codegen.rs` | Структура и адаптеры для сборки другой программы |
+
+Например, для `id INT, name STRING(8), score FLOAT NULL` Layout занимает 28 байт:
+флаг — 1, NULL-bitmap — 1, id — 8, name — 2 байта длины + 8 байт текста,
+score — 8. Смещения полей: 2, 10 и 20. `Row` заимствует срез слота;
+`Row::at(1)` проверяет NULL-бит и читает строку сразу по смещению 10.
+Это рабочее представление в памяти. Текст на диске имеет переменную длину,
+поэтому адрес из PK-индекса нельзя использовать как позицию в UTF-8 файле.
+
+### Индекс и сравнение поиска
+
+В каждой таблице есть один `HashMap<i64, u64>`: PK → смещение слота **в RAM**.
+Он не сохраняется отдельным файлом. Построение при открытии — O(числа слотов),
+память индекса — O(числа живых записей). INSERT добавляет ключ, DELETE удаляет,
+UPDATE ключа заменяет его; ALTER/VACUUM перестраивают адреса после уплотнения.
+
+Сравнение (`id = 3`) — проверка значения, а индекс — способ найти кандидата.
+Полный просмотр проверяет WHERE у всех живых записей: O(числа слотов).
+Индекс по равенству INT PK находит один слот в среднем за O(1), после чего
+проверяется **весь** WHERE. Это сохраняет правильность `id = 3 AND accuracy > 0.8`.
+OR использует этот путь только при одном и том же PK в обеих ветвях.
+HashMap не поддерживает упорядоченные диапазоны; `id > 3`, разные PK через OR
+и условия по другим колонкам требуют просмотра. JOIN просматривает левую таблицу
+и ищет совпадения по PK-индексу правой; отдельных FK-индексов нет.
+
+### FK после ALTER и границы изменения схемы
+
+```sql
+ALTER TABLE experiments ADD COLUMN reviewer_id INT NULL REFERENCES models(id);
+UPDATE experiments SET reviewer_id = 1 WHERE id = 1;
+```
+
+Сначала проверяется, что цель существует и является INT PRIMARY KEY.
+ALTER переписывает старые строки с `reviewer_id = NULL`, публикует новую схему
+и заменяет её в открытой `Table`. Следующий INSERT/UPDATE сразу проверяет новую
+связь: NULL допустим, ненулевой FK обязан существовать в PK-индексе родителя.
+Перезапуск CLI для этого не нужен. Ошибка FK отклоняет подготовленный UPDATE
+до записи его строк. При DELETE или смене PK родителя движок читает текущие
+схемы дочерних таблиц и ищет действующие ссылки полным просмотром: RESTRICT.
+Каскадного удаления или обновления нет.
+
+`DROP COLUMN` и снятие `REFERENCES`/`DROP CONSTRAINT` не реализованы.
+`check_evolution` запрещает изменение старых колонок и их FK; такая операция
+не является поддерживаемым ALTER. Автоматического наблюдения за файлами нет:
+изменения через API видны сразу, внешние правки требуют закрытия и повторного открытия.
+
+Схемы ниже разделены по вопросам: общая архитектура, открытие, Layout/кодек,
+поиск, перепись, ключи и сборка потребителя. Стрелки показывают передаваемые данные
+и зависимости; цветные области отделяют диск, рабочую память и сборку.
+
+<!-- architecture:start -->
+
+![1. Архитектура: кто хранит данные и кто проверяет правила](diagrams/docs/architecture/01-architecture/01-architecture.png)
+
+[Исходник drawio](docs/architecture/01-architecture.drawio)
+
+<details><summary>2. Открытие базы: из файлов в рабочие структуры</summary>
+
+![2. Открытие базы: из файлов в рабочие структуры](diagrams/docs/architecture/02-open/02-open.png)
+
+[Исходник drawio](docs/architecture/02-open.drawio)
+
+</details>
+
+<details><summary>3. Schema → Layout; текст ↔ запись; запись → Value</summary>
+
+![3. Schema → Layout; текст ↔ запись; запись → Value](diagrams/docs/architecture/03-layout/03-layout.png)
+
+[Исходник drawio](docs/architecture/03-layout.drawio)
+
+</details>
+
+<details><summary>4. Поиск по PK: что ускоряет индекс и что измеряется</summary>
+
+![4. Поиск по PK: что ускоряет индекс и что измеряется](diagrams/docs/architecture/04-select/04-select.png)
+
+[Исходник drawio](docs/architecture/04-select.drawio)
+
+</details>
+
+<details><summary>5. Изменение схемы и данных: перепись и точка переключения</summary>
+
+![5. Изменение схемы и данных: перепись и точка переключения](diagrams/docs/architecture/05-rewrite/05-rewrite.png)
+
+[Исходник drawio](docs/architecture/05-rewrite.drawio)
+
+</details>
+
+<details><summary>6. PK и FK: добавление связи, изменение строк и ограничения DDL</summary>
+
+![6. PK и FK: добавление связи, изменение строк и ограничения DDL](diagrams/docs/architecture/06-keys/06-keys.png)
+
+[Исходник drawio](docs/architecture/06-keys.drawio)
+
+</details>
+
+<details><summary>7. Сборка потребителя: схема → Rust-структура и пользовательский impl</summary>
+
+![7. Сборка потребителя: схема → Rust-структура и пользовательский impl](diagrams/docs/architecture/07-codegen/07-codegen.png)
+
+[Исходник drawio](docs/architecture/07-codegen.drawio)
+
+</details>
+
+<!-- architecture:end -->
+
+## Реализовано по ТЗ
+
+Статусы относятся к функциям; итоговую оценку выставляет преподаватель.
+Уровни накопительные, строки таблицы не суммируются.
+
+| ТЗ | Команды / материалы | Выполнено полностью |
+| --- | --- | --- |
+| 4: CREATE, INSERT, собственные файлы и перезапуск | `CREATE TABLE …; INSERT INTO …; EXIT;`, повторный `./run.sh` | Да |
+| 5: SELECT и шесть сравнений | `SELECT id FROM experiments WHERE accuracy >= 0.88;` | Да |
+| 6: полный CRUD | `INSERT`, `SELECT`, `UPDATE`, `DELETE` в сценарии защиты | Да |
+| 7: PK/авто-ID, запрет дублей, INT/STRING/FLOAT, ошибки | `DESCRIBE experiments;`, повторный INSERT с тем же id | Да |
+| 8: три связанные таблицы, CLI, FK, данные 5/5/20 | `./sample.sh новый_каталог`, неверный FK в сценарии | Да |
+| 9: INNER JOIN, AND/OR, проекция, схема, архитектура и README | Примеры выше, [скриншот](docs/schema.png), [drawio](docs/architecture/) | Да |
+| 10: индекс, сравнение поиска, backup/restore, воспроизводимость | Команда замера ниже; `BACKUP first; RESTORE first TO 'scratch/restored';` | Да |
+| 11: SQL-like парсер, автотесты и генераторы | `cargo test --locked --offline --all-targets`, `minidb gen` | Да |
+| 12: инженерное расширение — Docker и восстановление поколений | `bash scripts/check-docker.sh`, тесты обрыва переключения | Да: функции проверяются указанными сценариями |
+| Сдача: исходники, GitHub, данные, README, PDF | [sample](sample/), [отчёт на 2 страницы](docs/report.pdf), `git remote -v` | Нет: остаётся отправить репозиторий и указать ссылку GitHub |
+
+## Проверки и отчёт
 
 ```sh
 cargo test --locked --offline --all-targets
 cargo clippy --locked --offline --all-targets -- -D warnings
 cargo fmt --all -- --check
-```
-
-Проверки выполняются на Linux. Windows и отдельный toolchain 1.89 здесь не
-запускались; fsync каталога вызывается только на Unix. File::try_lock/unlock
-требует Rust 1.89, HashMap::get_disjoint_mut — 1.86. Все Cargo-пакеты используют
-один `target/`, заданный в .cargo/config.toml.
-
-Benchmark и старый формат:
-
-```sh
 cargo run --locked --offline --release --example bench -- scratch/bench 5000
-cargo run --locked --offline --example migrate -- /path/to/old-db
 ```
 
-Мигратор читает MINIDB TEXT 2 и сохраняет оригинал в `.legacy`.
-Старый бинарный WAL требует отдельного конвертера. Результаты замера
-не гарантируют ту же скорость на другой машине.
+Последняя команда нужна для сравнения индекса по ТЗ на 10 баллов и для PDF-отчёта.
+Открытие, наполнение и sync исключены из замера; сравниваются scan, get и SELECT по PK
+в RAM на одинаковых запросах с проверкой контрольных сумм. Это не замер дискового I/O.
+Результат одного запуска — [CSV](docs/benchmark.csv): 5000 строк, 1000 одинаковых
+запросов по PK, release; контрольная сумма всех способов — 2486500.
 
-Docker:
+| Способ поиска | Время 1000 запросов, мс |
+| --- | ---: |
+| Принудительный полный просмотр `scan` | 66.159 |
+| PK-индекс `get(id)` | 0.143 |
+| `SELECT … WHERE id = …` | 0.134 |
+
+В этом запуске прямой PK-поиск быстрее полного просмотра примерно в 463 раза:
+он рассматривает один слот вместо всех. Числа зависят от машины; небольшая разница
+между `get` и SELECT — шум единичного замера, а не преимущество SELECT.
+[PDF на две страницы](docs/report.pdf) содержит ту же схему таблиц, формат хранения,
+сценарий операций, результаты сравнения и ограничения реализации.
+Раздел 5 ТЗ прямо требует PDF с результатами benchmark индекса.
+Отчёт пересобирается: `python3 scripts/make_report.py` (нужен pycairo).
+
+## Генератор и документация
 
 ```sh
-docker compose run --build --rm minidb sh /usr/local/bin/sample.sh /data/sample
-docker compose run --rm minidb minidb /data/sample
+cargo run --locked --offline -- gen sample --out scratch/generated
+cargo run --locked --offline --manifest-path examples/simulator/Cargo.toml -- scratch/simulator
 ```
 
-В контейнере база передаётся явно, volume хранит данные между запусками.
+Генератор читает `*_schema` и выдаёт struct, VERSION, LAYOUT, from_row/to_values,
+insert/update и Default. Старый читатель допускает совместимый префикс и игнорирует добавленные поля.
+Потребитель, собранный с большим числом полей, не читает более старую БД: проверка
+сообщает об отсутствующих колонках. После ALTER старые строки физически дополнены NULL,
+поэтому новый потребитель получает для nullable-полей `None`. Запись требует
+совпадения колонок, типов и ширин. VERSION/GENERATION не сравниваются на равенство.
+Пользовательские методы находятся в отдельном impl; пример с build.rs —
+[examples/simulator](examples/simulator/). Rustc запускает потребитель при сборке.
+Нативные VALIDATOR используются через `Database::open_with`; CLI их не обходит.
+Исходники архитектуры находятся в `docs/architecture`, результаты экспорта — в `diagrams`.
+
+[Справка команд](docs/COMMANDS.md) автоматически получается из `minidb --help`:
+`bash scripts/generate-commands.sh`. [Первый workflow](.github/workflows/commands.yml)
+обновляет её, [второй](.github/workflows/drawio-to-png.yml) экспортирует drawio и обновляет
+раздел схем этого README. Ручной запуск обоих — `workflow_dispatch`.
+
+```sh
+act workflow_dispatch --bind -W .github/workflows/commands.yml -j commands \
+  -P ubuntu-latest=catthehacker/ubuntu:act-24.04
+act workflow_dispatch --bind -W .github/workflows/drawio-to-png.yml -j diagrams \
+  -P ubuntu-latest=catthehacker/ubuntu:act-24.04
+```
+
+Нужен Docker. В act используются локальные файлы, checkout и отправка коммита
+пропускаются; сборка, экспорт и генерация документации выполняются полностью.

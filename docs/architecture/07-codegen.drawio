@@ -1,0 +1,77 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="07-codegen.drawio" name="7. Сборка потребителя: схема → Rust-структура и пользовательский impl">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1700" pageHeight="1110" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="7. Сборка потребителя: схема → Rust-структура и пользовательский impl" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=25;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fontStyle=1;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="1640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Два независимых пользователя одних данных: динамический CLI и типизированная программа. Компилятор запускается при сборке потребителя." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="65" width="1640" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="truth" value="ИСТОЧНИК ПРАВДЫ · *_schema" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="130" width="450" height="350" as="geometry" />
+        </mxCell>
+        <mxCell id="schema" value="CREATE TABLE experiments …&#10;VERSION 2, GENERATION 7&#10;Колонки, типы, nullable, PK/FK&#10;Схема хранится в БД" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="200" width="390" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="alter" value="ALTER переписывает данные и схему&#10;Новый столбец попадает в следующий gen&#10;Отложенный тип сначала определить" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="380" width="390" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="build" value="СБОРКА СИМУЛЯТОРА · build.rs или minidb gen" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="550" y="130" width="1120" height="350" as="geometry" />
+        </mxCell>
+        <mxCell id="gen" value="codegen::generate_dir&#10;Читает *_schema&#10;Считает Layout&#10;Генерирует исходный текст" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="580" y="200" width="430" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="rs" value="OUT_DIR/tables.rs&#10;struct Experiment + Default&#10;VERSION / LAYOUT / COLUMNS&#10;from_row / to_values / insert / update" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="200" width="530" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="custom" value="experiments_rules.rs&#10;impl Experiment { validate, score }&#10;Ручной файл: генератор его не меняет" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="580" y="380" width="430" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="rustc" value="include!(…/tables.rs) + пользовательский impl&#10;Один crate → обычный rustc потребителя" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1110" y="380" width="530" height="75" as="geometry" />
+        </mxCell>
+        <mxCell id="runtime" value="РАБОТА С ОДНОЙ И ТОЙ ЖЕ БАЗОЙ" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="570" width="1640" height="250" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" value="CLI → Database → Row::at&#10;Динамически по текущей Schema&#10;Новый столбец доступен сразу после ALTER" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="650" width="450" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="file" value="experiments_schema&#10;experiments_7&#10;Один UTF-8 файл текущих данных" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="600" y="650" width="450" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="sim" value="Симулятор → Database → from_row&#10;Value → i64 / String / Option&lt;T&gt;&#10;Проверка совместимости колонок" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1140" y="650" width="500" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="compat" value="СОВМЕСТИМОСТЬ&#10;Старый читатель: совпавший префикс → игнорировать добавленные поля.&#10;Новый читатель старой БД: не хватает колонок → ошибка.&#10;Запись: полный список имён, типов и ширин обязан совпасть.&#10;VERSION/GENERATION сами по себе не запрещают совместимую запись." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="900" width="930" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="validator" value="Rust-валидатор&#10;validator_adapter(Row) → from_row → validate&#10;Регистрируется через Database::open_with.&#10;CLI без такой функции сообщает об ошибке.&#10;ALTER не компилирует и не загружает Rust-код." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1040" y="900" width="630" height="170" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="Schema" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="schema" target="gen">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="String: исходник" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="gen" target="rs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" value="включить" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="rs" target="rustc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-4" value="объединить" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="custom" target="rustc">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" value="читает / пишет" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="cli" target="file">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-6" value="через тот же движок" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="sim" target="file">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

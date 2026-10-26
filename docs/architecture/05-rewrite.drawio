@@ -1,0 +1,71 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="05-rewrite.drawio" name="5. Изменение схемы и данных: перепись и точка переключения">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1700" pageHeight="1200" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="5. Изменение схемы и данных: перепись и точка переключения" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=25;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fontStyle=1;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="1640" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Одна версия структуры в RAM; один текущий файл. Старые строки перекодируются, а не читаются через старые Layout." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="65" width="1640" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="reasons" value="ПРИЧИНЫ ПОЛНОЙ ПЕРЕПИСИ" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="130" width="1640" height="230" as="geometry" />
+        </mxCell>
+        <mxCell id="alter" value="ALTER ADD COLUMN … NULL&#10;check_evolution: только в конец&#10;Старые поля, PK и FK неизменны&#10;VERSION + 1, GENERATION + 1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="190" width="490" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="infer" value="ADD COLUMN note; → Kind::Null&#10;Первый успешный INSERT/UPDATE&#10;выбирает тип; затем он фиксирован&#10;VERSION та же, GENERATION + 1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="605" y="190" width="490" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="vac" value="VACUUM table&#10;Удалить DEAD/FREE слоты&#10;VERSION та же, GENERATION + 1&#10;Если пустых слотов нет — вернуть 0" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="190" width="490" height="140" as="geometry" />
+        </mxCell>
+        <mxCell id="prepare" value="1 · Table::rewrite(new_schema)&#10;Проверить новый Layout один раз&#10;Создать новое поколение create_new&#10;Ошибка до публикации → старое остаётся" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="450" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="copy" value="2 · Перекодировать LIVE&#10;Row старого Layout → значения&#10;Вставить NULL для новых колонок&#10;encode новым Layout → новый TextFile" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="605" y="450" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="durable" value="3 · Сохранить новый файл&#10;Сбросить UTF-8 + sync_all&#10;До этого schema указывает на старое&#10;Пример: datasets_7 → datasets_8" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="450" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="commit" value="4 · Единственная точка переключения&#10;Записать schema.tmp → sync → rename&#10;GENERATION 8 в datasets_schema&#10;Затем sync каталога" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="1150" y="710" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="ram" value="5 · Обновить Table в процессе&#10;Заменить schema / Layout / TextFile&#10;Перенумеровать слоты, rebuild_index&#10;Сохранить highest_id; free теперь пуст" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="605" y="710" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="remove" value="6 · Удалить старое поколение&#10;datasets_7 больше не нужно&#10;Ошибка уборки → повторить при open&#10;Новые команды видят новую схему сразу" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="710" width="490" height="150" as="geometry" />
+        </mxCell>
+        <mxCell id="before" value="ОБРЫВ ДО ПЕРЕКЛЮЧЕНИЯ СХЕМЫ&#10;Schema: GENERATION 7 → прочитать datasets_7.&#10;datasets_8 — сирота; убрать после успешного open.&#10;Незавершённое ALTER не считается применённым." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="960" width="760" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="after" value="ОБРЫВ ПОСЛЕ ПЕРЕКЛЮЧЕНИЯ СХЕМЫ&#10;Schema: GENERATION 8 → прочитать datasets_8.&#10;datasets_7 — сирота; убрать после успешного open.&#10;Нет текущего файла / он повреждён → ошибка." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="880" y="960" width="760" height="160" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="значения" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="prepare" target="copy">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="слоты" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="copy" target="durable">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" value="готово" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="durable" target="commit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-4" value="опубликовано" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="commit" target="ram">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" value="новые offsets" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" edge="1" parent="1" source="ram" target="remove">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="ordinary" value="Обычный UPDATE: подготовить пакет → проверить типы/PK/FK → применить слоты → сохранить снимок текущего файла.&#10;Он не меняет GENERATION, если не определяет отложенный тип. WAL и отката нескольких команд нет." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1140" width="1640" height="55" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

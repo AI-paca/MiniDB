@@ -1,0 +1,78 @@
+<?xml version='1.0' encoding='utf-8'?>
+<mxfile host="app.diagrams.net" type="device">
+  <diagram id="04-select.drawio" name="4. Поиск по PK: что ускоряет индекс и что измеряется">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1180" background="#ffffff">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" value="4. Поиск по PK: что ускоряет индекс и что измеряется" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=25;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fontStyle=1;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="20" width="1540" height="40" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" value="Индекс выбирает адрес кандидата. Сравнение проверяет значение; оставшийся WHERE проверяется в обоих путях." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
+          <mxGeometry x="30" y="65" width="1540" height="45" as="geometry" />
+        </mxCell>
+        <mxCell id="start" value="SELECT id, accuracy FROM experiments WHERE id = 3 AND accuracy &gt; 0.8&#10;Expr::prepare один раз: «id» → 0, «accuracy» → 3; проекция → номера полей." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="160" y="140" width="1280" height="100" as="geometry" />
+        </mxCell>
+        <mxCell id="choice" value="Filter::primary_key&#10;Можно ограничить ответ одним INT PK?&#10;AND — достаточно одного PK; OR — только одинаковый PK в обеих ветвях." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="400" y="300" width="800" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="index" value="ДА · индекс Table.index: HashMap&lt;i64, u64&gt;" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="30" y="480" width="710" height="370" as="geometry" />
+        </mxCell>
+        <mxCell id="lookup" value="get(3): hash(3) → offset&#10;Найден → один LIVE-слот&#10;Нет ключа → пустой результат&#10;Средняя стоимость O(1), память O(N)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="550" width="650" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="matchone" value="Filter::matches(row)&#10;Проверить полный WHERE у кандидата&#10;Row::at читает по offsets&#10;Несовпадение → строка не выдаётся" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="710" width="650" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="scan" value="НЕТ · последовательный Table::scan" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+          <mxGeometry x="860" y="480" width="710" height="370" as="geometry" />
+        </mxCell>
+        <mxCell id="iterate" value="id &gt; 3, name = …, id = 1 OR id = 2&#10;Пройти все слоты, пропустить DEAD/FREE&#10;Filter::matches для каждой LIVE&#10;Время O(числа слотов)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="890" y="550" width="650" height="120" as="geometry" />
+        </mxCell>
+        <mxCell id="other" value="HashMap не упорядочена: нет поиска диапазона.&#10;Отдельных индексов по name / FK нет.&#10;JOIN: scan слева + PK lookup справа.&#10;Индекс PK обновляется при каждой успешной мутации." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="890" y="710" width="650" height="110" as="geometry" />
+        </mxCell>
+        <mxCell id="result" value="Одинаковый результат&#10;Проекция нужных полей → callback / вывод CLI; NULL в сравнении даёт UNKNOWN, WHERE пропускает только TRUE." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="160" y="910" width="1280" height="80" as="geometry" />
+        </mxCell>
+        <mxCell id="bench" value="ЗАМЕР · 5000 строк / 1000 одинаковых PK запросов / release&#10;Принудительный Database::scan: 66.159 мс · get(id): 0.143 мс · SELECT id = …: 0.134 мс&#10;Checksum = 2486500 у всех путей. Открытие, наполнение и sync вне таймера; данные уже в RAM.&#10;Разница — число просмотренных записей. Это один запуск, не гарантия ускорения и не тест дискового I/O." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1040" width="1540" height="115" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="start" target="choice">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-2" value="да" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="choice" target="lookup">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="385" y="355" />
+              <mxPoint x="385" y="450" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-3" value="нет" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0.5;entryY=0;" edge="1" parent="1" source="choice" target="iterate">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1230" y="355" />
+              <mxPoint x="1230" y="450" />
+            </Array>
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="edge-4" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="lookup" target="matchone">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" value="подходит" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="matchone" target="result">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-6" value="пояснение" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;dashed=1;" edge="1" parent="1" source="iterate" target="other">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-7" value="совпавшие строки" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="other" target="result">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

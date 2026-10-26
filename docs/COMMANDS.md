@@ -21,6 +21,7 @@ MiniDB — команды вводятся здесь, после приглаш
 
   CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL, score FLOAT);
   ALTER TABLE notes ADD COLUMN attempts INT NULL;
+  VACUUM notes;                убрать удалённые слоты из файла данных
   ALTER TABLE notes ADD COLUMN note;  тип NULL до первого ненулевого значения
   INSERT INTO notes (name, score) VALUES ('Alice', 0.9);
   INSERT INTO notes (name, score) VALUES ('Bob', 0.8);
@@ -50,7 +51,8 @@ NULL или пропущенный PK включает auto-ID. Строки —
 JOIN: INT-поле слева → PRIMARY KEY справа, WHERE по полям левой таблицы.
 RESTORE с коротким именем ищет копию в <текущая_база>_backups/<имя>.
 В Unix-консоли: ↑/↓ — история, ←/→ — курсор, Tab — дополнение.
-Изменения сохраняются сразу. Файлы: <таблица>.schema.sql — схема, <таблица> — UTF-8 данные; следующие версии: vN/<таблица>.
+Изменения сохраняются сразу. Файлы: <таблица>_schema — схема с VERSION и GENERATION, <таблица>_<поколение> — UTF-8 данные.
+ALTER переписывает живые строки; VACUUM уплотняет файл без изменения VERSION.
 Seed без барьеров отдельных записей: bash run.sh --no-barriers каталог.
 Запуск из Bash: bash run.sh [каталог], справка: bash run.sh -h.
 

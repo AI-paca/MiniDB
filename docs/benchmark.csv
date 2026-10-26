@@ -1,2 +1,2 @@
-rows,queries,scan_ms,index_ms,speedup,checksum
-5000,1000,65.834,0.158,415.75,2486500
+rows,queries,scan_ms,index_ms,select_ms,speedup,checksum
+5000,1000,66.159,0.143,0.134,462.77,2486500
