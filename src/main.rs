@@ -50,7 +50,7 @@ DELETE удаляет строки с данными. UPDATE notes SET comment =
 очищает значение nullable-поля, сохраняя столбец.
 После ошибки сразу появляется пример команды; отдельно вызывать help не нужно.
 
-Примеры запросов к базе sample, созданной через ./sample.sh:
+Примеры запросов к базе примера (./run.sh sample; файл команд — sample):
   SELECT * FROM datasets;
   SELECT id, accuracy FROM experiments WHERE accuracy >= 0.85;
   SELECT experiments.id, datasets.name FROM experiments INNER JOIN datasets ON experiments.dataset_id = datasets.id;
@@ -65,7 +65,8 @@ RESTORE с коротким именем ищет копию в <текущая_
 Изменения сохраняются сразу. Файлы: <таблица>_schema — схема с VERSION и GENERATION, <таблица>_<поколение> — UTF-8 данные.
 ALTER переписывает живые строки; VACUUM уплотняет файл без изменения VERSION.
 Seed без барьеров отдельных записей: bash run.sh --no-barriers каталог.
-Запуск из Bash: bash run.sh [каталог], справка: bash run.sh -h.
+Запуск: ./run.sh — пустая база db/main; ./run.sh sample — пример db/sample.
+Явный каталог: ./run.sh каталог; справка: ./run.sh -h.
 ";
 
 fn main() {
@@ -88,7 +89,7 @@ fn run() -> Result<()> {
         return Ok(());
     }
     if args.iter().any(|s| ["-h", "--help"].contains(&s.as_str())) {
-        println!("Запуск: minidb [каталог_базы], по умолчанию sample; minidb gen db/ --out dir/\n\n{HELP}");
+        println!("Запуск: minidb [каталог_базы], по умолчанию db/main; minidb gen db/ --out dir/\n\n{HELP}");
         return Ok(());
     }
     let no_barriers = args.iter().any(|arg| arg == "--no-barriers");

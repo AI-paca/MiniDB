@@ -212,9 +212,13 @@ fn e_foreign_keys_create_insert_update_and_restrict() -> Result<()> {
     let temp = Temp::new()?;
     let root = temp.0.join("db");
     let output = std::process::Command::new("sh")
-        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/sample.sh"))
+        .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/run.sh"))
         .arg(&root)
         .env("MINIDB_BIN", env!("CARGO_BIN_EXE_minidb"))
+        .stdin(fs::File::open(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/sample"
+        ))?)
         .output()?;
     assert!(
         output.status.success(),

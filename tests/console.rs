@@ -17,9 +17,10 @@ impl Temp {
     }
     fn sample(&self) -> Output {
         Command::new("sh")
-            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/sample.sh"))
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/run.sh"))
             .arg(self.0.join("db"))
             .env("MINIDB_BIN", env!("CARGO_BIN_EXE_minidb"))
+            .stdin(fs::File::open(concat!(env!("CARGO_MANIFEST_DIR"), "/sample")).unwrap())
             .output()
             .unwrap()
     }
@@ -55,7 +56,7 @@ fn success(output: &Output) -> String {
 }
 
 #[test]
-fn prebuilt_run_script_opens_default_database_in_the_callers_directory() {
+fn run_script_default_database_is_empty_and_separate_from_sample() {
     let temp = Temp::new();
     let scripts = temp.0.join("bin");
     fs::create_dir(&scripts).unwrap();
@@ -65,14 +66,17 @@ fn prebuilt_run_script_opens_default_database_in_the_callers_directory() {
         .arg(script)
         .current_dir(&temp.0)
         .env("MINIDB_BIN", env!("CARGO_BIN_EXE_minidb"))
+        .env("MINIDB_DATABASE_ROOT", temp.0.join("db"))
         .stdin(Stdio::null())
         .output()
         .unwrap();
     let stdout = success(&output);
-    let expected = temp.0.join("sample");
+    let expected = temp.0.join("db/main");
     assert!(stdout.contains(&expected.display().to_string()));
     assert!(expected.join(".lock").exists());
-    assert!(!scripts.join("sample").exists());
+    assert!(stdout.contains("таблиц: 0"));
+    assert!(!temp.0.join("db/sample").exists());
+    assert!(!scripts.join("db").exists());
 }
 
 #[test]
@@ -144,18 +148,36 @@ fn open_backup_and_restore_commands_use_new_directory() {
 }
 
 #[test]
-fn sample_is_sql_through_run_sh_and_refuses_to_overwrite_existing_data() {
+fn sample_is_plain_sql_and_run_script_reopens_without_overwriting() {
     let temp = Temp::new();
-    let stdout = success(&temp.sample());
-    assert!(stdout.contains("Создана таблица datasets"));
-    assert!(!stdout.contains("Добавлен столбец datasets."));
-    assert!(stdout.contains("Создана таблица models"));
-    assert!(!stdout.contains("Добавлен столбец models."));
-    let root = temp.0.join("db");
+    let sql = fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/sample")).unwrap();
+    assert_eq!(minidb::sql::parse(&sql).unwrap().len(), 33);
+    let launch = || {
+        Command::new("sh")
+            .arg(concat!(env!("CARGO_MANIFEST_DIR"), "/run.sh"))
+            .arg("sample")
+            .env("MINIDB_BIN", env!("CARGO_BIN_EXE_minidb"))
+            .env("MINIDB_DATABASE_ROOT", temp.0.join("db"))
+            .stdin(Stdio::null())
+            .output()
+            .unwrap()
+    };
+    assert!(success(&launch()).contains("таблиц: 3"));
+    let root = temp.0.join("db/sample");
+    {
+        let mut db = minidb::Database::open(&root).unwrap();
+        db.update(
+            "datasets",
+            &minidb::Expr::All,
+            &[("task", minidb::Value::String("edited"))],
+        )
+        .unwrap();
+    }
     let before = fs::read(root.join("experiments_1")).unwrap();
-    let repeated = temp.sample();
-    assert!(!repeated.status.success());
+    let datasets_before = fs::read(root.join("datasets_1")).unwrap();
+    assert!(success(&launch()).contains("таблиц: 3"));
     assert_eq!(fs::read(root.join("experiments_1")).unwrap(), before);
+    assert_eq!(fs::read(root.join("datasets_1")).unwrap(), datasets_before);
     let mut db = minidb::Database::open(&root).unwrap();
     assert_eq!(
         db.table_names().unwrap(),
@@ -541,7 +563,7 @@ fn cli_refuses_a_stored_native_validator_without_bypassing_it() {
 #[test]
 fn default_database_and_show_database_use_the_same_canonical_directory() {
     let temp = Temp::new();
-    let root = temp.0.join("sample");
+    let root = temp.0.join("db/main");
     let mut db = minidb::Database::open(&root).unwrap();
     db.create(minidb::Schema::new(
         "datasets",

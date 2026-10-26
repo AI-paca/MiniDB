@@ -2,7 +2,10 @@
 /examples/simulator/target/
 /data/
 /scratch/
-/sample/.lock
-/sample/.history
-/sample/**/*.tmp
+/db/main/
+/db/.sample.*/
+/db/*_backups/
+/db/sample/.lock
+/db/sample/.history
+/db/sample/**/*.tmp
 *.lock.tmp

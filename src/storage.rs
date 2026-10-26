@@ -154,7 +154,7 @@ pub(crate) fn schema_files(
             continue;
         };
         if filename.ends_with(".schema.sql") || filename.ends_with(".schema") {
-            return Err("Старый формат схемы/сегментов не поддерживается; экспортируйте данные прежней программой или пересоздайте базу через sample.sh".into());
+            return Err("Старый формат схемы/сегментов не поддерживается; экспортируйте данные прежней программой; новую базу можно наполнить SQL-командами из файла sample".into());
         }
         let Some(name) = filename.strip_suffix("_schema") else {
             continue;
