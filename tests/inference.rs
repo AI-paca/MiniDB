@@ -110,7 +110,7 @@ fn untyped_columns_stay_null_across_inserts_empty_updates_and_restart() -> Resul
 }
 
 #[test]
-fn first_update_sets_the_type_once_without_changing_add_history() -> Result<()> {
+fn first_update_sets_the_type_once_without_changing_schema_version() -> Result<()> {
     let temp = Temp::new();
     let mut db = Database::open(&temp.0)?;
     db.create(schema())?;
@@ -118,7 +118,7 @@ fn first_update_sets_the_type_once_without_changing_add_history() -> Result<()> 
         db.insert("items", &[Value::Int(id), Value::String("old")])?;
     }
     db.add_column("items", Column::new("count", DataType::NULL))?;
-    let history = db.schema("items")?.history();
+    let generation = db.schema("items")?.generation;
     assert_eq!(
         db.update(
             "items",
@@ -128,7 +128,7 @@ fn first_update_sets_the_type_once_without_changing_add_history() -> Result<()> 
         1
     );
     assert_eq!(db.schema("items")?.version, 2);
-    assert_eq!(db.schema("items")?.history(), history);
+    assert_eq!(db.schema("items")?.generation, generation + 1);
     assert!(matches!(
         db.schema("items")?.columns[2].data_type.kind,
         Kind::Int { .. }
@@ -141,11 +141,11 @@ fn first_update_sets_the_type_once_without_changing_add_history() -> Result<()> 
         db.get("items", 2, |r| Ok(r.get("count")? == Value::Null))?,
         Some(true)
     );
-    let catalog = fs::read(temp.0.join("items.schema.sql"))?;
+    let catalog = fs::read(temp.0.join("items_schema"))?;
     assert!(db
         .update("items", &Expr::All, &[("count", Value::String("wrong"))])
         .is_err());
-    assert_eq!(fs::read(temp.0.join("items.schema.sql"))?, catalog);
+    assert_eq!(fs::read(temp.0.join("items_schema"))?, catalog);
     db.update("items", &Expr::All, &[("count", Value::Null)])?;
     assert!(!pending(&db, "count"));
     drop(db);
@@ -217,7 +217,7 @@ fn invalid_writes_do_not_pin_a_type_or_consume_an_auto_id() -> Result<()> {
     db.create(schema())?;
     db.insert("items", &[Value::Int(1), Value::String("old")])?;
     db.add_column("items", Column::new("extra", DataType::NULL))?;
-    let before = fs::read(temp.0.join("items.schema.sql"))?;
+    let before = fs::read(temp.0.join("items_schema"))?;
     for values in [
         vec![Value::Int(1), Value::String("duplicate"), Value::Int(7)],
         vec![Value::Null, Value::Int(9), Value::Int(7)],
@@ -226,7 +226,7 @@ fn invalid_writes_do_not_pin_a_type_or_consume_an_auto_id() -> Result<()> {
     ] {
         assert!(db.insert("items", &values).is_err());
         assert!(pending(&db, "extra"));
-        assert_eq!(fs::read(temp.0.join("items.schema.sql"))?, before);
+        assert_eq!(fs::read(temp.0.join("items_schema"))?, before);
     }
     assert!(db
         .update(

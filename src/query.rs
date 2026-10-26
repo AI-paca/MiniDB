@@ -74,6 +74,20 @@ pub(crate) enum Filter<'a> {
 }
 
 impl Filter<'_> {
+    /// Равенство PK ограничивает результат одной строкой. Остальной фильтр
+    /// всё равно проверяется, поэтому AND и одинаковый PK в OR безопасны.
+    pub(crate) fn primary_key(&self, pk: usize) -> Option<i64> {
+        match self {
+            Self::Compare(column, Compare::Eq, Value::Int(key)) if *column == pk => Some(*key),
+            Self::And(a, b) => a.primary_key(pk).or_else(|| b.primary_key(pk)),
+            Self::Or(a, b) => match (a.primary_key(pk), b.primary_key(pk)) {
+                (Some(a), Some(b)) if a == b => Some(a),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
     pub fn matches(&self, row: Row<'_>) -> Result<bool> {
         Ok(self.truth(row)? == Some(true))
     }

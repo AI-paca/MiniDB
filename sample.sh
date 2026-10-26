@@ -43,14 +43,17 @@ INSERT INTO datasets VALUES (NULL, 'iris', 'classification', 150);
 INSERT INTO datasets VALUES (NULL, 'mnist', 'classification', 300);
 INSERT INTO datasets VALUES (NULL, 'cifar', 'classification', 450);
 INSERT INTO datasets VALUES (NULL, 'imagenet', 'classification', 600);
-INSERT INTO datasets VALUES (NULL, 'housing', 'classification', 750);
+INSERT INTO datasets VALUES (NULL, 'housing', 'regression', 750);
 INSERT INTO models VALUES (NULL, 'linear', '1.0');
 INSERT INTO models VALUES (NULL, 'forest', '1.0');
 INSERT INTO models VALUES (NULL, 'cnn', '1.0');
 INSERT INTO models VALUES (NULL, 'transformer', '1.0');
 INSERT INTO models VALUES (NULL, 'baseline', '1.0');
+INSERT INTO experiments VALUES (NULL, 1, 1, 0.91, 'completed');
+INSERT INTO experiments VALUES (NULL, 1, 2, 0.88, 'completed');
+INSERT INTO experiments VALUES (NULL, 2, 1, 0.76, 'running');
 SQL
-    sample_i=0
+    sample_i=3
     while [ "$sample_i" -lt 20 ]; do
         sample_dataset=$((sample_i % 5 + 1))
         sample_model=$((sample_i / 5 % 5 + 1))

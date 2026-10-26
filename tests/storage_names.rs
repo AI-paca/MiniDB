@@ -55,11 +55,11 @@ fn sql_schema_discovery_codegen_backup_and_restore_use_exact_suffixes() -> Resul
     )?;
     db.sync()?;
     assert_eq!(
-        Schema::from_text(&fs::read_to_string(root.join("notes.schema.sql"))?)?.version,
+        Schema::from_text(&fs::read_to_string(root.join("notes_schema"))?)?.version,
         2
     );
-    assert!(root.join("notes").is_file());
-    assert!(root.join("v2/notes").is_file());
+    assert!(!root.join("notes_1").exists());
+    assert!(root.join("notes_2").is_file());
     for path in [".notes", ".notes.v1", "notes.schema", "notes.data"] {
         assert!(!root.join(path).exists(), "{path}");
     }
@@ -71,7 +71,6 @@ fn sql_schema_discovery_codegen_backup_and_restore_use_exact_suffixes() -> Resul
         ("notes.version_backup.data", "not a segment"),
         ("notes.v.data", "not a version"),
         ("notes.schema.tmp", "incomplete"),
-        ("notes.schema.sql.tmp", "incomplete"),
         (".editorconfig", "root = true"),
     ] {
         fs::write(root.join(filename), text)?;
@@ -84,10 +83,10 @@ fn sql_schema_discovery_codegen_backup_and_restore_use_exact_suffixes() -> Resul
         .map(|e| e.map(|e| e.file_name()))
         .collect::<std::io::Result<Vec<_>>>()?;
     filenames.sort();
-    assert_eq!(filenames, ["notes", "notes.schema.sql", "v2"]);
+    assert_eq!(filenames, ["notes_2", "notes_schema"]);
     assert_eq!(
-        fs::read(root.join("notes"))?,
-        fs::read(backup.join("notes"))?
+        fs::read(root.join("notes_2"))?,
+        fs::read(backup.join("notes_2"))?
     );
     drop(db);
     let mut reopened = Database::open(&root)?;

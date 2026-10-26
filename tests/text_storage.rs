@@ -41,7 +41,7 @@ fn utf8_files_are_the_storage_and_ide_edits_are_read_after_reopen() -> Result<()
     let message = "Русский\t\n\r\0\\\"' \u{1b}\u{85}";
     db.insert("items", &[Value::Int(1), Value::String(message)])?;
     db.insert("items", &[Value::Int(2), Value::String("edit me")])?;
-    let path = temp.0.join("items");
+    let path = temp.0.join("items_1");
     let text = fs::read_to_string(&path)?;
     assert!(text.contains("# state\tid\tname\nLIVE\t1\t\"Русский"));
     assert!(text.contains("\\u{0}"));
@@ -70,7 +70,7 @@ fn utf8_files_are_the_storage_and_ide_edits_are_read_after_reopen() -> Result<()
 }
 
 #[test]
-fn seed_evolution_and_migration_use_readable_files_in_version_directories() -> Result<()> {
+fn seed_evolution_and_migration_use_readable_files_in_one_current_generation() -> Result<()> {
     let temp = Temp::new()?;
     let root = temp.0.join("db");
     let mut db = Database::open(&root)?;
@@ -97,8 +97,8 @@ fn seed_evolution_and_migration_use_readable_files_in_version_directories() -> R
     );
     db.update("items", &Expr::All, &[("score", Value::Float(1.0))])?;
     db.set_write_barriers(true)?;
-    assert!(fs::read_to_string(root.join("items"))?.contains("DEAD\t1\t\"old\""));
-    assert!(fs::read_to_string(root.join("v2/items"))?.contains("LIVE\t1\t\"old\"\t1.0"));
+    assert!(!root.join("items_1").exists());
+    assert!(fs::read_to_string(root.join("items_2"))?.contains("LIVE\t1\t\"old\"\t1.0"));
     db.backup("snapshot")?;
     let mut restored =
         Database::restore(temp.0.join("db_backups/snapshot"), temp.0.join("copy"), &[])?;
@@ -111,8 +111,8 @@ fn seed_evolution_and_migration_use_readable_files_in_version_directories() -> R
         2
     );
     assert_eq!(
-        fs::read_to_string(root.join("v2/items"))?,
-        fs::read_to_string(temp.0.join("copy/v2/items"))?
+        fs::read_to_string(root.join("items_2"))?,
+        fs::read_to_string(temp.0.join("copy/items_2"))?
     );
     Ok(())
 }
@@ -121,16 +121,16 @@ fn seed_evolution_and_migration_use_readable_files_in_version_directories() -> R
 fn malformed_text_is_rejected_with_a_path_and_never_rewritten() -> Result<()> {
     let temp = Temp::new()?;
     drop(Table::create(&temp.0, schema())?);
-    let path = temp.0.join("items");
+    let path = temp.0.join("items_1");
     for text in [
         "broken".to_owned(),
-        "# MiniDB text; VERSION 2\n".into(),
-        "# MiniDB text; VERSION 1\nMISSING\t1\t\"name\"\n".into(),
-        "# MiniDB text; VERSION 1\nLIVE\t1\n".into(),
-        "# MiniDB text; VERSION 1\nLIVE\twrong\t\"name\"\n".into(),
-        "# MiniDB text; VERSION 1\nLIVE\t1\t\"\\u{zz}\"\n".into(),
+        "# MiniDB text; GENERATION 2\n".into(),
+        "# MiniDB text; GENERATION 1\nMISSING\t1\t\"name\"\n".into(),
+        "# MiniDB text; GENERATION 1\nLIVE\t1\n".into(),
+        "# MiniDB text; GENERATION 1\nLIVE\twrong\t\"name\"\n".into(),
+        "# MiniDB text; GENERATION 1\nLIVE\t1\t\"\\u{zz}\"\n".into(),
         format!(
-            "# MiniDB text; VERSION 1\nLIVE\t1\t\"{}\"\n",
+            "# MiniDB text; GENERATION 1\nLIVE\t1\t\"{}\"\n",
             "x".repeat(65)
         ),
     ] {
@@ -149,40 +149,53 @@ fn malformed_text_is_rejected_with_a_path_and_never_rewritten() -> Result<()> {
 }
 
 #[test]
-fn temporary_file_collision_preserves_both_data_and_the_existing_temporary_file() -> Result<()> {
+fn unique_temporary_files_preserve_an_existing_editor_file() -> Result<()> {
     let temp = Temp::new()?;
     let mut table = Table::create(&temp.0, schema())?;
     table.insert(&[Value::Int(7), Value::String("saved")])?;
-    let before = fs::read(temp.0.join("items"))?;
-    fs::write(temp.0.join("items.tmp"), "editor work")?;
-    assert!(table
-        .insert(&[Value::Int(8), Value::String("new")])
-        .is_err());
-    assert_eq!(fs::read(temp.0.join("items"))?, before);
-    assert_eq!(fs::read_to_string(temp.0.join("items.tmp"))?, "editor work");
-    assert!(table.get(7).is_err());
-    fs::remove_file(temp.0.join("items.tmp"))?;
-    table.rebuild_index()?;
+    let before = fs::read(temp.0.join("items_1"))?;
+    fs::write(temp.0.join("items_1.tmp"), "editor work")?;
+    table.insert(&[Value::Int(8), Value::String("new")])?;
+    assert_ne!(fs::read(temp.0.join("items_1"))?, before);
+    assert_eq!(
+        fs::read_to_string(temp.0.join("items_1.tmp"))?,
+        "editor work"
+    );
     assert!(table.get(7)?.is_some());
-    assert!(table.get(8)?.is_none());
+    assert!(table.get(8)?.is_some());
     Ok(())
 }
 
 #[test]
-fn unknown_versions_and_duplicate_schemas_are_not_silently_ignored() -> Result<()> {
+fn orphan_generations_are_removed_but_unrelated_files_are_preserved() -> Result<()> {
     let temp = Temp::new()?;
     drop(Table::create(&temp.0, schema())?);
-    fs::copy(temp.0.join("items.schema.sql"), temp.0.join("items.schema"))?;
+    fs::copy(temp.0.join("items_schema"), temp.0.join("items.schema"))?;
     assert!(Database::open(&temp.0).is_err());
     fs::remove_file(temp.0.join("items.schema"))?;
-    fs::create_dir(temp.0.join("v9"))?;
-    fs::write(temp.0.join("v9/items"), "# MiniDB text; VERSION 9\n")?;
-    assert!(Table::open(&temp.0, "items")
-        .err()
-        .unwrap()
-        .to_string()
-        .contains("истории схемы"));
-    assert!(temp.0.join("v9/items").exists());
+    for name in [
+        "items_0",
+        "items_9",
+        "items_01",
+        "items_backup",
+        "items_9.tmp",
+        "items_+4",
+    ] {
+        fs::write(temp.0.join(name), "orphan or unrelated")?;
+    }
+    drop(Table::open(&temp.0, "items")?);
+    for name in ["items_0", "items_9", "items_01"] {
+        assert!(!temp.0.join(name).exists());
+    }
+    for name in [
+        "items_backup",
+        "items_9.tmp",
+        "items_+4",
+        "items_1",
+        "items_schema",
+    ] {
+        assert!(temp.0.join(name).exists());
+    }
     Ok(())
 }
 
@@ -196,9 +209,9 @@ fn binary_files_are_refused_without_creating_a_text_shadow() -> Result<()> {
         .err()
         .unwrap()
         .to_string()
-        .contains("ветке binary"));
+        .contains("Старый формат"));
     assert_eq!(fs::read(temp.0.join("items.v1.data"))?, binary);
-    assert!(!temp.0.join("items").exists());
+    assert!(!temp.0.join("items_1").exists());
     Ok(())
 }
 
@@ -210,7 +223,7 @@ fn reading_does_not_apply_narrowed_constraints_but_check_does() -> Result<()> {
     drop(table);
     let mut narrowed = schema();
     narrowed.columns[0].data_type.kind = minidb::Kind::Int { min: 2, max: 10 };
-    fs::write(temp.0.join("items.schema.sql"), narrowed.to_text())?;
+    fs::write(temp.0.join("items_schema"), narrowed.to_text())?;
     let mut table = Table::open(&temp.0, "items")?;
     assert_eq!(table.get(1)?.unwrap().get("name")?, Value::String("saved"));
     assert!(table.check().is_err());

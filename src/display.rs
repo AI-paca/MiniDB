@@ -63,7 +63,10 @@ pub(crate) fn print_join<'row>(
 }
 
 pub(crate) fn describe(schema: &Schema) {
-    println!("Таблица {}, версия {}", schema.name, schema.version);
+    println!(
+        "Таблица {}, версия {}, поколение {}",
+        schema.name, schema.version, schema.generation
+    );
     let headers: Vec<String> = ["Поле", "Тип", "NULL", "Ограничения (PK/FK, MIN/MAX)"]
         .map(str::to_owned)
         .into();

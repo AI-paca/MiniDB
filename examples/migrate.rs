@@ -50,7 +50,7 @@ fn migrate(root: &Path) -> Result<PathBuf> {
         let path = entry.path();
         let filename = entry.file_name();
         if path.extension().is_some_and(|ext| ext == "schema")
-            || filename.to_string_lossy().ends_with(".schema.sql")
+            || filename.to_string_lossy().ends_with("_schema")
         {
             return Err("В каталоге уже есть схемы нового формата".into());
         }
@@ -498,7 +498,7 @@ mod tests {
         fs::write(&path, &text)?;
         assert!(migrate(&root).is_err());
         assert_eq!(fs::read_to_string(path)?, text);
-        assert!(!root.join("items.schema.sql").exists());
+        assert!(!root.join("items_schema").exists());
         assert!(!sibling(&root, ".legacy")?.exists());
         assert!(!sibling(&root, ".migrate.tmp")?.exists());
         Ok(())

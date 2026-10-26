@@ -50,22 +50,17 @@ fn tag(kind: Kind) -> u8 {
 fn check_columns(
     schema: &Schema,
     table: &str,
-    version: u32,
+    _version: u32,
     columns: &[(&str, usize, u8)],
 ) -> Result<()> {
     if schema.name != table {
         return Err("Типизированный читатель получил другую таблицу".into());
     }
-    if version == 0 || version > schema.version || columns.len() > schema.columns.len() {
-        return Err("Потребитель собран под более новую VERSION: обновите базу или пересоберите потребителя".into());
-    }
-    let count = if schema.version == 1 && schema.columns_at_version.is_empty() {
-        Some(schema.columns.len())
-    } else {
-        schema.columns_at_version.get(&version).copied()
-    };
-    if count != Some(columns.len()) {
-        return Err("Число колонок не соответствует VERSION потребителя".into());
+    if columns.len() > schema.columns.len() {
+        return Err(
+            "У потребителя больше колонок, чем в базе: обновите базу или пересоберите потребителя"
+                .into(),
+        );
     }
     for ((name, width, kind), physical) in columns.iter().zip(&schema.columns) {
         if *name != physical.name
@@ -76,6 +71,14 @@ fn check_columns(
         }
     }
     Ok(())
+}
+
+/// Запись требует совпадения структуры. VERSION и GENERATION — только метаданные.
+pub fn check_writer(schema: &Schema, table: &str, columns: &[(&str, usize, u8)]) -> Result<()> {
+    if columns.len() != schema.columns.len() {
+        return Err("Несовместимая структура записи: пересоберите потребителя".into());
+    }
+    check_columns(schema, table, schema.version, columns)
 }
 
 /// Полная проверка схемы перед циклом. Сгенерированный scan вызывает её один раз.
@@ -94,7 +97,7 @@ pub fn check_schema_once(
 pub fn check_record(row: Row<'_>) -> Result<()> {
     if row.bytes.len() != row.layout.row_size
         || row.layout.cols.is_empty()
-        || row.layout.cols.len() > row.schema.columns.len()
+        || row.layout.cols.len() != row.schema.columns.len()
     {
         return Err("Неверный размер записи".into());
     }
@@ -163,15 +166,14 @@ pub fn generate(schema: &Schema) -> Result<String> {
         out,
         "#[derive(Clone, Debug, Default, PartialEq)]\npub struct {name} {{"
     )?;
-    let initial = schema.history()[&1];
-    for (i, col) in schema.columns.iter().enumerate() {
+    for col in &schema.columns {
         let ty = match col.data_type.kind {
             Kind::Null => return Err("Отложенный тип ещё не определён".into()),
             Kind::Int { .. } => "i64",
             Kind::Float { .. } => "f64",
             Kind::String { .. } => "::std::string::String",
         };
-        let ty = if col.data_type.nullable || i >= initial {
+        let ty = if col.data_type.nullable {
             format!("::std::option::Option<{ty}>")
         } else {
             ty.into()
@@ -191,7 +193,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
             Kind::Float { .. } => ("Float", "value"),
             Kind::String { .. } => ("String", "value.to_owned()"),
         };
-        let optional = col.data_type.nullable || i >= initial;
+        let optional = col.data_type.nullable;
         let decoded = if optional {
             format!("::std::option::Option::Some({decode})")
         } else {
@@ -215,7 +217,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
         )?;
     }
     writeln!(out, "        }})\n    }}\n    pub fn to_values(&self) -> ::std::vec::Vec<::minidb::Value<'_>> {{\n        vec![")?;
-    for (i, col) in schema.columns.iter().enumerate() {
+    for col in &schema.columns {
         let field = rust_name(&col.name);
         let (variant, access) = match col.data_type.kind {
             Kind::Null => return Err("Отложенный тип ещё не определён".into()),
@@ -223,7 +225,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
             Kind::Float { .. } => ("Float", ""),
             Kind::String { .. } => ("String", ".as_str()"),
         };
-        let expr = if col.data_type.nullable || i >= initial {
+        let expr = if col.data_type.nullable {
             let optional = if matches!(col.data_type.kind, Kind::String { .. }) {
                 ".as_deref()"
             } else {
@@ -236,8 +238,8 @@ pub fn generate(schema: &Schema) -> Result<String> {
         writeln!(out, "            {expr},")?;
     }
     writeln!(out, "        ]\n    }}")?;
-    writeln!(out, "    pub fn insert(&self, db: &mut ::minidb::Database) -> ::minidb::Result<i64> {{\n        db.insert_versioned(TABLE, VERSION, &self.to_values())\n    }}")?;
-    writeln!(out, "    pub fn update(&self, db: &mut ::minidb::Database, id: i64) -> ::minidb::Result<usize> {{\n        db.check_version(TABLE, VERSION)?;\n        let values = self.to_values();\n        let assignments: ::std::vec::Vec<_> = COLUMNS.iter().zip(values).enumerate().filter(|(index, _)| *index != {}).map(|(_, ((name, _, _), value))| (*name, value)).collect();\n        db.update(TABLE, &::minidb::Expr::Compare({:?}, ::minidb::Compare::Eq, ::minidb::Value::Int(id)), &assignments)\n    }}", schema.primary_key, schema.columns[schema.primary_key].name)?;
+    writeln!(out, "    pub fn insert(&self, db: &mut ::minidb::Database) -> ::minidb::Result<i64> {{\n        ::minidb::codegen::check_writer(db.schema(TABLE)?, TABLE, COLUMNS)?;\n        db.insert(TABLE, &self.to_values())\n    }}")?;
+    writeln!(out, "    pub fn update(&self, db: &mut ::minidb::Database, id: i64) -> ::minidb::Result<usize> {{\n        ::minidb::codegen::check_writer(db.schema(TABLE)?, TABLE, COLUMNS)?;\n        let values = self.to_values();\n        let assignments: ::std::vec::Vec<_> = COLUMNS.iter().zip(values).enumerate().filter(|(index, _)| *index != {}).map(|(_, ((name, _, _), value))| (*name, value)).collect();\n        db.update(TABLE, &::minidb::Expr::Compare({:?}, ::minidb::Compare::Eq, ::minidb::Value::Int(id)), &assignments)\n    }}", schema.primary_key, schema.columns[schema.primary_key].name)?;
     if schema.validator.is_some() {
         writeln!(out, "    pub fn validator_adapter(row: ::minidb::Row<'_>) -> ::minidb::Result<()> {{\n        Self::from_row(row)?.validate()\n    }}")?;
     }
@@ -245,7 +247,7 @@ pub fn generate(schema: &Schema) -> Result<String> {
     Ok(out)
 }
 
-/// Детерминированный tables.rs: модуль на каждую *.schema.sql (или прежнюю *.schema).
+/// Детерминированный tables.rs: модуль на каждый файл *_schema.
 pub fn generate_dir(root: impl AsRef<Path>) -> Result<String> {
     let paths = crate::storage::schema_files(root.as_ref())?;
     let mut out = String::new();

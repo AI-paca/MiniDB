@@ -49,12 +49,12 @@ fn select_reuses_the_buffer_for_borrowed_strings_without_per_row_allocations() -
             ],
             0,
         );
-        let mut text = String::from("# MiniDB text; VERSION 1\n# state\tid\tname\n");
+        let mut text = String::from("# MiniDB text; GENERATION 1\n# state\tid\tname\n");
         for id in 1..=1000 {
             text.push_str(&format!("LIVE\t{id}\t\"строка {id}\"\n"));
         }
-        fs::write(root.join("items.schema.sql"), schema.to_text())?;
-        fs::write(root.join("items"), text)?;
+        fs::write(root.join("items_schema"), schema.to_text())?;
+        fs::write(root.join("items_1"), text)?;
         let mut db = Database::open(&root)?;
         let mut sum = 0;
         let mut count = 0;

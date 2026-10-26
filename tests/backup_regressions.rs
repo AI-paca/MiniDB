@@ -43,7 +43,7 @@ fn backup_and_restore_reject_sources_without_tables_but_allow_empty_tables() -> 
     drop(copy);
     db.insert("items", &[Value::Int(1)])?;
     drop(db);
-    let before = fs::read(root.join("items"))?;
+    let before = fs::read(root.join("items_1"))?;
     let empty = temp.0.join("empty");
     fs::create_dir(&empty)?;
     fs::write(empty.join("README"), "not a table")?;
@@ -52,7 +52,7 @@ fn backup_and_restore_reject_sources_without_tables_but_allow_empty_tables() -> 
         .unwrap()
         .to_string()
         .contains("копировать нечего"));
-    assert_eq!(fs::read(root.join("items"))?, before);
+    assert_eq!(fs::read(root.join("items_1"))?, before);
     assert!(!temp.0.join("db.restore.tmp").exists());
     assert!(!temp.0.join("db.restore.old").exists());
     Ok(())

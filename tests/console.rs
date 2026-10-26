@@ -66,7 +66,7 @@ fn console_crud_multiline_filters_and_restart() {
     let again = success(&temp.run("select * from notes;\nexit\n"));
     assert!(again.contains("Alice"));
     assert!(!again.contains("Bob"));
-    let text = fs::read_to_string(temp.0.join("db/notes")).unwrap();
+    let text = fs::read_to_string(temp.0.join("db/notes_1")).unwrap();
     let rows: Vec<_> = text.lines().filter(|line| !line.starts_with('#')).collect();
     assert_eq!(rows.len(), 3);
     assert!(rows.iter().any(|row| row.starts_with("DEAD\t2\t")));
@@ -118,8 +118,8 @@ fn open_backup_and_restore_commands_use_new_directory() {
     assert!(stdout.contains("Восстановлена и открыта"));
     assert!(stdout.contains("iris"));
     assert!(stdout.contains("Таблиц пока нет"));
-    assert!(backup.join("datasets.schema.sql").exists());
-    assert!(restored.join("datasets").exists());
+    assert!(backup.join("datasets_schema").exists());
+    assert!(restored.join("datasets_1").exists());
 }
 
 #[test]
@@ -131,10 +131,10 @@ fn sample_is_sql_through_run_sh_and_refuses_to_overwrite_existing_data() {
     assert!(stdout.contains("Создана таблица models"));
     assert!(!stdout.contains("Добавлен столбец models."));
     let root = temp.0.join("db");
-    let before = fs::read(root.join("experiments")).unwrap();
+    let before = fs::read(root.join("experiments_1")).unwrap();
     let repeated = temp.sample();
     assert!(!repeated.status.success());
-    assert_eq!(fs::read(root.join("experiments")).unwrap(), before);
+    assert_eq!(fs::read(root.join("experiments_1")).unwrap(), before);
     let mut db = minidb::Database::open(&root).unwrap();
     assert_eq!(
         db.table_names().unwrap(),
@@ -158,20 +158,52 @@ fn sample_is_sql_through_run_sh_and_refuses_to_overwrite_existing_data() {
             .collect::<Vec<_>>(),
         ["id", "name", "task", "size"]
     );
+    for (table, columns) in [
+        ("models", vec!["id", "name", "version"]),
+        (
+            "experiments",
+            vec!["id", "dataset_id", "model_id", "accuracy", "status"],
+        ),
+    ] {
+        assert_eq!(
+            db.schema(table)
+                .unwrap()
+                .columns
+                .iter()
+                .map(|column| column.name.as_str())
+                .collect::<Vec<_>>(),
+            columns
+        );
+    }
+    for (id, dataset, model, accuracy, status) in [
+        (1, 1, 1, 0.91, "completed"),
+        (2, 1, 2, 0.88, "completed"),
+        (3, 2, 1, 0.76, "running"),
+    ] {
+        assert_eq!(
+            db.get("experiments", id, |row| Ok(row.get("dataset_id")?
+                == minidb::Value::Int(dataset)
+                && row.get("model_id")? == minidb::Value::Int(model)
+                && row.get("accuracy")? == minidb::Value::Float(accuracy)
+                && row.get("status")? == minidb::Value::String(status)))
+                .unwrap(),
+            Some(true)
+        );
+    }
 }
 
 #[test]
 fn alter_add_column_is_persistent_after_inserts_and_rejects_not_null() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY);\nINSERT INTO notes VALUES (1);\nALTER TABLE notes ADD COLUMN text STRING(16) NULL;\nALTER TABLE notes ADD score FLOAT MIN 0 MAX 1 NULL;\nexit;\n"));
-    let schema_path = temp.0.join("db/notes.schema.sql");
+    let schema_path = temp.0.join("db/notes_schema");
     let before = fs::read(&schema_path).unwrap();
-    let data = fs::read(temp.0.join("db/notes")).unwrap();
+    let data = fs::read(temp.0.join("db/notes_3")).unwrap();
     let rejected = temp.run("ALTER TABLE notes ADD COLUMN text INT NULL;\nALTER TABLE notes ADD COLUMN second INT PRIMARY KEY;\nALTER TABLE notes ADD COLUMN parent INT NULL REFERENCES missing(id);\nALTER TABLE notes ADD COLUMN required INT NOT NULL;\nexit;\n");
     assert!(!rejected.status.success());
     assert!(String::from_utf8_lossy(&rejected.stderr).contains("старые записи не имеют значения"));
     assert_eq!(fs::read(&schema_path).unwrap(), before);
-    assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), data);
+    assert_eq!(fs::read(temp.0.join("db/notes_3")).unwrap(), data);
     success(&temp.run("INSERT INTO notes VALUES (2, 'hello', 0.5);\nUPDATE notes SET text = 'old' WHERE id = 1;\nexit;\n"));
     let stdout = success(&temp.run("SELECT * FROM notes;\nALTER TABLE notes ADD COLUMN later INT NULL;\nSELECT * FROM notes;\nexit;\n"));
     assert!(stdout.contains("hello"));
@@ -188,30 +220,23 @@ fn alter_add_column_is_persistent_after_inserts_and_rejects_not_null() {
 }
 
 #[test]
-fn empty_alter_versions_have_metadata_without_unused_segment_files() {
+fn empty_alters_keep_only_the_current_generation() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY);\nALTER TABLE notes ADD a INT NULL;\nALTER TABLE notes ADD b STRING NULL;\nALTER TABLE notes ADD c FLOAT NULL;\nexit;\n"));
-    for version in 1..=3 {
-        let name = if version == 1 {
-            "db/notes".to_owned()
-        } else {
-            format!("db/v{version}/notes")
-        };
-        assert!(!temp.0.join(name).exists());
-        if version > 1 {
-            assert!(!temp.0.join(format!("db/v{version}")).exists());
-        }
+    for generation in 1..=3 {
+        assert!(!temp.0.join(format!("db/notes_{generation}")).exists());
     }
-    assert!(temp.0.join("db/v4/notes").exists());
-    let schema = fs::read_to_string(temp.0.join("db/notes.schema.sql")).unwrap();
-    assert!(schema.contains("-- minidb-empty-version: 1"));
+    assert!(temp.0.join("db/notes_4").exists());
+    let schema = fs::read_to_string(temp.0.join("db/notes_schema")).unwrap();
+    assert!(schema.contains("VERSION 4\nGENERATION 4"));
+    assert!(!schema.contains("minidb-empty-version"));
     success(
         &temp.run(
             "INSERT INTO notes VALUES (1, NULL, 'one', 0.5);\nBACKUP empty_versions;\nexit;\n",
         ),
     );
     assert!(success(&temp.run("SELECT * FROM notes;\nexit;\n")).contains("\"one\""));
-    fs::remove_file(temp.0.join("db/v4/notes")).unwrap();
+    fs::remove_file(temp.0.join("db/notes_4")).unwrap();
     let output = temp.run("");
     assert!(!output.status.success()); // Потеря файла с данными по-прежнему ошибка.
 }
@@ -285,7 +310,7 @@ fn default_string_uses_compact_slots_and_oversized_definitions_create_no_files()
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE labels (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO labels VALUES (1, 'one');\nINSERT INTO labels VALUES (2, 'two');\nINSERT INTO labels VALUES (3, 'three');\nINSERT INTO labels VALUES (4, 'four');\nINSERT INTO labels VALUES (5, 'five');\nCREATE TABLE largest (id INT PRIMARY KEY, text STRING(65535));\nexit;\n"));
     let root = temp.0.join("db");
-    let stored = fs::read_to_string(root.join("labels")).unwrap();
+    let stored = fs::read_to_string(root.join("labels_1")).unwrap();
     assert_eq!(
         stored
             .lines()
@@ -293,23 +318,23 @@ fn default_string_uses_compact_slots_and_oversized_definitions_create_no_files()
             .count(),
         5
     );
-    let before = fs::read(root.join("labels.schema.sql")).unwrap();
+    let before = fs::read(root.join("labels_schema")).unwrap();
     let output = temp.run("CREATE TABLE oversized (id INT PRIMARY KEY, text STRING(65536));\nCREATE TABLE huge (id INT PRIMARY KEY, text STRING(100000));\nALTER TABLE labels ADD COLUMN bad STRING(100000);\nexit;\n");
     assert!(!output.status.success());
     assert!(String::from_utf8(output.stderr).unwrap().contains("65535"));
     for name in ["oversized", "huge"] {
-        assert!(!root.join(format!("{name}.schema.sql")).exists());
+        assert!(!root.join(format!("{name}_schema")).exists());
         assert!(!root.join(name).exists());
     }
-    assert_eq!(fs::read(root.join("labels.schema.sql")).unwrap(), before);
-    assert_eq!(fs::read_to_string(root.join("labels")).unwrap(), stored);
+    assert_eq!(fs::read(root.join("labels_schema")).unwrap(), before);
+    assert_eq!(fs::read_to_string(root.join("labels_1")).unwrap(), stored);
 }
 
 #[test]
 fn edited_column_case_is_readable_and_join_where_error_names_the_field() {
     let temp = Temp::new();
     success(&temp.sample());
-    let path = temp.0.join("db/models.schema.sql");
+    let path = temp.0.join("db/models_schema");
     let schema = fs::read_to_string(&path)
         .unwrap()
         .replace("  name STRING", "  Name STRING");
@@ -332,8 +357,8 @@ fn restore_short_name_uses_the_current_database_when_destination_differs() {
     let stdout = success(&temp.run(&format!("CREATE TABLE items (id INT PRIMARY KEY);\nINSERT INTO items VALUES (7);\nBACKUP first;\nRESTORE first TO '{}';\nSELECT id FROM items;\nexit;\n", destination.display())));
     assert!(stdout.contains("Восстановлена и открыта"));
     assert!(stdout.contains("Строк: 1"));
-    assert!(temp.0.join("db_backups/first/items.schema.sql").exists());
-    assert!(destination.join("items").exists());
+    assert!(temp.0.join("db_backups/first/items_schema").exists());
+    assert!(destination.join("items_1").exists());
     assert!(!temp.0.join("other.db_backups").exists());
 }
 
@@ -392,7 +417,7 @@ fn cli_rejects_validator_with_a_library_instruction_without_creating_files() {
         temp.run("CREATE TABLE guarded (id INT PRIMARY KEY) VALIDATOR business_rule;\nexit;\n");
     assert!(!out.status.success());
     assert!(String::from_utf8_lossy(&out.stderr).contains("Database::open_with"));
-    assert!(!temp.0.join("db/guarded.schema.sql").exists());
+    assert!(!temp.0.join("db/guarded_schema").exists());
     let stored = minidb::Schema::from_text(
         "CREATE TABLE guarded (id INT PRIMARY KEY) VALIDATOR business_rule;",
     )
@@ -401,7 +426,7 @@ fn cli_rejects_validator_with_a_library_instruction_without_creating_files() {
 }
 
 #[test]
-fn restore_to_the_active_database_releases_the_lock_and_replaces_all_segments() {
+fn restore_to_the_active_database_releases_the_lock_and_replaces_the_current_generation() {
     let temp = Temp::new();
     let target = temp.0.join("db/../db");
     let stdout = success(&temp.run(&format!(
@@ -421,7 +446,7 @@ fn restore_to_the_active_database_releases_the_lock_and_replaces_all_segments() 
     assert!(stdout.contains("\"saved\""));
     assert!(!stdout.contains("\"changed\""));
     assert!(!stdout.contains("\"after_backup\""));
-    assert!(!temp.0.join("db/v2/notes").exists());
+    assert!(!temp.0.join("db/notes_2").exists());
     assert!(!temp.0.join("db.restore.tmp").exists());
     assert!(!temp.0.join("db.restore.old").exists());
     let mut db = minidb::Database::open(temp.0.join("db")).unwrap();
@@ -439,12 +464,12 @@ fn restore_to_the_active_database_releases_the_lock_and_replaces_all_segments() 
 fn failed_restore_reopens_the_active_database_and_keeps_the_console_usable() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING);\nINSERT INTO notes VALUES (1, 'keep');\nexit;\n"));
-    let schema = fs::read(temp.0.join("db/notes.schema.sql")).unwrap();
-    let data = fs::read(temp.0.join("db/notes")).unwrap();
+    let schema = fs::read(temp.0.join("db/notes_schema")).unwrap();
+    let data = fs::read(temp.0.join("db/notes_1")).unwrap();
     let broken = temp.0.join("broken");
     fs::create_dir(&broken).unwrap();
-    fs::write(broken.join("notes.schema.sql"), &schema).unwrap();
-    fs::write(broken.join("notes"), b"invalid").unwrap();
+    fs::write(broken.join("notes_schema"), &schema).unwrap();
+    fs::write(broken.join("notes_1"), b"invalid").unwrap();
     let output = temp.run(&format!(
         "RESTORE '{}' TO '{}';\nRESTORE '{}' TO '{}';\nSELECT * FROM notes;\nSHOW DATABASE;\nexit;\n",
         temp.0.join("missing").display(), temp.0.join("db").display(),
@@ -456,11 +481,8 @@ fn failed_restore_reopens_the_active_database_and_keeps_the_console_usable() {
     assert!(stdout.contains("\"keep\""));
     assert!(stdout.contains("Активная база:"));
     assert!(!stderr.contains("База уже открыта другим процессом"));
-    assert_eq!(
-        fs::read(temp.0.join("db/notes.schema.sql")).unwrap(),
-        schema
-    );
-    assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), data);
+    assert_eq!(fs::read(temp.0.join("db/notes_schema")).unwrap(), schema);
+    assert_eq!(fs::read(temp.0.join("db/notes_1")).unwrap(), data);
     assert!(!temp.0.join("db.restore.tmp").exists());
     assert!(!temp.0.join("db.restore.old").exists());
 }
@@ -482,7 +504,7 @@ fn cli_refuses_a_stored_native_validator_without_bypassing_it() {
     db.create(schema).unwrap();
     db.insert("guarded", &[minidb::Value::Int(1)]).unwrap();
     drop(db);
-    let before = fs::read(root.join("guarded")).unwrap();
+    let before = fs::read(root.join("guarded_1")).unwrap();
     let output = Command::new(env!("CARGO_BIN_EXE_minidb"))
         .arg(&root)
         .output()
@@ -492,7 +514,7 @@ fn cli_refuses_a_stored_native_validator_without_bypassing_it() {
     assert!(error.contains("business_rule"));
     assert!(error.contains("Database::open_with"));
     assert!(error.contains("SQL-консоль не исполняет Rust-валидаторы"));
-    assert_eq!(fs::read(root.join("guarded")).unwrap(), before);
+    assert_eq!(fs::read(root.join("guarded_1")).unwrap(), before);
 }
 
 #[test]
@@ -531,7 +553,7 @@ fn default_database_and_show_database_use_the_same_canonical_directory() {
     let stdout = success(&process.wait_with_output().unwrap());
     let canonical = fs::canonicalize(&root).unwrap();
     assert!(stdout.contains(&format!("Активная база: {}", canonical.display())));
-    assert!(stdout.contains(&canonical.join("datasets").display().to_string()));
+    assert!(stdout.contains(&canonical.join("datasets_1").display().to_string()));
     assert!(stdout.contains("lol"));
     assert!(stdout.contains("Строк: 1"));
     assert!(!temp.0.join("data").exists());
@@ -549,7 +571,7 @@ fn missing_required_insert_field_names_the_column_and_writes_nothing() {
             .count(),
         2
     );
-    assert!(fs::read_to_string(temp.0.join("db/datasets"))
+    assert!(fs::read_to_string(temp.0.join("db/datasets_1"))
         .unwrap()
         .lines()
         .all(|line| line.starts_with('#') || line.is_empty()));
@@ -570,7 +592,7 @@ fn missing_required_insert_field_names_the_column_and_writes_nothing() {
 fn malformed_commands_show_examples_immediately_and_leave_data_unchanged() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO notes VALUES (1, 'keep');\nexit;\n"));
-    let before = fs::read(temp.0.join("db/notes")).unwrap();
+    let before = fs::read(temp.0.join("db/notes_1")).unwrap();
     for (sql, example) in [
         ("SELEC * FROM notes;", "SELECT * FROM notes;"),
         (
@@ -592,7 +614,7 @@ fn malformed_commands_show_examples_immediately_and_leave_data_unchanged() {
         assert!(String::from_utf8(output.stdout)
             .unwrap()
             .contains("\"keep\""));
-        assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), before);
+        assert_eq!(fs::read(temp.0.join("db/notes_1")).unwrap(), before);
     }
 }
 
@@ -619,14 +641,14 @@ fn insert_hint_uses_required_columns_and_is_an_executable_example() {
 fn drop_column_reports_unsupported_and_delete_examples_distinguish_rows_from_columns() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO notes VALUES (1, 'first');\nINSERT INTO notes VALUES (2, 'second');\nexit;\n"));
-    let before = fs::read(temp.0.join("db/notes")).unwrap();
+    let before = fs::read(temp.0.join("db/notes_1")).unwrap();
     let output =
         temp.run("ALTER TABLE notes DROP COLUMN name;\nDELETE COLUMN name FROM notes;\nexit;\n");
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(!output.status.success());
     assert!(error.contains("DROP COLUMN) пока не поддерживается"));
     assert!(error.contains("DELETE FROM notes WHERE id = 1;"));
-    assert_eq!(fs::read(temp.0.join("db/notes")).unwrap(), before);
+    assert_eq!(fs::read(temp.0.join("db/notes_1")).unwrap(), before);
     let output = temp.run("DELETE notes;\nexit;\n");
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("Удалить ВСЕ строки, сохранив таблицу и столбцы:"));

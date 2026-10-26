@@ -42,13 +42,12 @@ fn schema() -> Schema {
 }
 
 #[test]
-fn history_and_evolution_reject_destructive_changes() -> Result<()> {
+fn versions_and_generations_roundtrip_and_evolution_rejects_destructive_changes() -> Result<()> {
     let old = schema();
     let new = old.with_added_column(Column::new("score", nullable(DataType::FLOAT)))?;
     assert_eq!(Schema::from_text(&new.to_text())?, new);
-    assert!(new
-        .to_text()
-        .contains("VERSION 2\nCOLUMNS_AT_VERSION 1 = 2\nCOLUMNS_AT_VERSION 2 = 3"));
+    assert!(new.to_text().contains("VERSION 2\nGENERATION 2"));
+    assert!(!new.to_text().contains("COLUMNS_AT_VERSION"));
     check_evolution(&old, &new)?;
     for variant in 0..9 {
         let mut bad = new.clone();
@@ -61,9 +60,7 @@ fn history_and_evolution_reject_destructive_changes() -> Result<()> {
             3 => bad.columns.swap(0, 1),
             4 => bad.columns[2].data_type.nullable = false,
             5 => bad.version = 1,
-            6 => {
-                bad.columns_at_version.insert(1, 1);
-            }
+            6 => bad.generation = 1,
             7 => bad.primary_key = 2,
             _ => {
                 bad.columns[0].data_type = DataType {
@@ -79,9 +76,9 @@ fn history_and_evolution_reject_destructive_changes() -> Result<()> {
         .is_err());
     for text in [
         new.to_text().replace("VERSION 2", "VERSION 0"),
-        new.to_text().replace("COLUMNS_AT_VERSION 1 = 2\n", ""),
-        new.to_text()
-            .replace("COLUMNS_AT_VERSION 2 = 3", "COLUMNS_AT_VERSION 2 = 2"),
+        new.to_text().replace("GENERATION 2", "GENERATION 0"),
+        new.to_text().replace("GENERATION 2", "GENERATION -1"),
+        new.to_text() + "GENERATION 3\n",
         new.to_text() + "COLUMNS_AT_VERSION 1 = 2\n",
     ] {
         assert!(Schema::from_text(&text).is_err());
@@ -92,23 +89,22 @@ fn history_and_evolution_reject_destructive_changes() -> Result<()> {
     ] {
         assert!(minidb::sql::parse(sql).is_err());
     }
-    let legacy = "CREATE TABLE items (id INT PRIMARY KEY, name STRING NOT NULL);";
-    assert_eq!(Schema::from_text(legacy)?.version, 1);
+    let defaults =
+        Schema::from_text("CREATE TABLE items (id INT PRIMARY KEY, name STRING NOT NULL);")?;
+    assert_eq!((defaults.version, defaults.generation), (1, 1));
     Ok(())
 }
 
 #[test]
-fn old_rows_default_null_and_bitmap_growth_uses_segment_offsets() -> Result<()> {
-    let mut old = schema();
+fn alter_reencodes_rows_when_the_null_bitmap_grows() -> Result<()> {
+    let temp = Temp::new();
+    let mut original = schema();
     for i in 2..8 {
-        old.columns
+        original
+            .columns
             .push(Column::new(&format!("c{i}"), DataType::INT));
     }
-    let new = old.with_added_column(Column::new("accuracy", nullable(DataType::FLOAT)))?;
-    let old_layout = Layout::from_schema(&old)?;
-    let new_layout = Layout::from_schema(&new)?;
-    assert_eq!((old_layout.header, new_layout.header), (2, 3));
-    old_layout.validate(&new)?;
+    let mut table = Table::create(&temp.0, original.clone())?;
     let values = [
         Value::Int(1),
         Value::String("old"),
@@ -119,105 +115,89 @@ fn old_rows_default_null_and_bitmap_growth_uses_segment_offsets() -> Result<()> 
         Value::Int(6),
         Value::Int(7),
     ];
-    let mut bytes = vec![0; old_layout.row_size];
-    record::encode(&old_layout, &old, &values, &mut bytes)?;
-    let row = Row {
-        bytes: &bytes,
-        layout: &old_layout,
-        schema: &new,
-    };
+    table.insert(&values)?;
+    let old_layout = Layout::from_schema(&original)?;
+    table.add_column(Column::new("accuracy", nullable(DataType::FLOAT)))?;
+    assert_eq!((old_layout.header, table.layout().header), (2, 3));
+    assert!(old_layout.validate(table.schema()).is_err());
+    let row = table.get(1)?.unwrap();
     assert_eq!(row.at(8)?, Value::Null);
     assert!(row.at(9).is_err());
     assert_eq!(row.at(7)?, Value::Int(7));
     row.validate()?;
-    // Префикс разрешён для чтения; кодирование требует полного текущего Layout.
-    let before = bytes.clone();
-    let mut all = values.to_vec();
-    all.push(Value::Null);
-    assert!(record::encode(&old_layout, &new, &all, &mut bytes).is_err());
-    assert_eq!(bytes, before);
+    let mut bytes = vec![0; old_layout.row_size];
+    record::encode(&old_layout, &original, &values, &mut bytes)?;
+    let malformed = Row {
+        bytes: &bytes,
+        layout: &old_layout,
+        schema: table.schema(),
+    };
+    assert!(malformed.at(8).is_err());
+    assert!(malformed.validate().is_err());
+    assert!(!temp.0.join("items_1").exists());
+    assert!(temp.0.join("items_2").exists());
     Ok(())
 }
 
 #[test]
-fn migration_scan_update_delete_reopen_and_backup_use_all_segments() -> Result<()> {
+fn rewrite_compacts_live_rows_preserves_auto_id_and_backup_uses_only_current_file() -> Result<()> {
     let temp = Temp::new();
     let root = temp.0.join("db");
     let mut db = Database::open(&root)?;
     db.create(schema())?;
-    db.insert("items", &[Value::Int(1), Value::String("first")])?;
-    db.insert("items", &[Value::Int(2), Value::String("second")])?;
-    db.insert("items", &[Value::Int(3), Value::String("deleted")])?;
+    for (id, name) in [(1, "first"), (2, "second"), (100, "deleted")] {
+        db.insert("items", &[Value::Int(id), Value::String(name)])?;
+    }
     assert_eq!(
-        db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(3)))?,
+        db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(100)))?,
         1
     );
-    let v1 = fs::read(root.join("items"))?;
     db.add_column("items", Column::new("score", nullable(DataType::FLOAT)))?;
-    assert_eq!(fs::read(root.join("items"))?, v1);
-    db.insert_versioned(
-        "items",
-        2,
-        &[Value::Int(4), Value::String("new"), Value::Float(0.5)],
-    )?;
-    assert_eq!(fs::read(root.join("items"))?, v1); // Старые free-слоты не используются.
-    assert!(db
-        .insert_versioned("items", 1, &[Value::Int(5), Value::String("stale")])
-        .is_err());
+    assert!(!root.join("items_1").exists());
+    let text = fs::read_to_string(root.join("items_2"))?;
+    assert!(!text.contains("DEAD"));
+    assert_eq!(
+        text.lines().filter(|line| line.starts_with("LIVE")).count(),
+        2
+    );
+    assert_eq!(
+        db.insert(
+            "items",
+            &[Value::Null, Value::String("new"), Value::Float(0.5)]
+        )?,
+        101
+    );
     assert_eq!(db.scan("items", &Expr::IsNull("score"), |_| Ok(()))?, 2);
     assert_eq!(
         db.update("items", &Expr::All, &[("score", Value::Float(0.75))])?,
         3
     );
-    let dead = fs::read_to_string(root.join("items"))?;
-    let rows: Vec<_> = dead.lines().filter(|line| !line.starts_with('#')).collect();
-    assert!(rows.iter().all(|line| line.starts_with("DEAD\t")));
-    let old = std::str::from_utf8(&v1)?;
-    for (old, new) in old.lines().filter(|line| !line.starts_with('#')).zip(rows) {
-        assert_eq!(
-            old.split_once('\t').unwrap().1,
-            new.split_once('\t').unwrap().1
-        );
-    }
-    db.update("items", &Expr::All, &[("score", Value::Float(1.0))])?;
-    assert_eq!(
-        fs::read_to_string(root.join("v2/items"))?
-            .lines()
-            .filter(|line| line.starts_with("LIVE\t"))
-            .count(),
-        3
-    );
     db.add_column("items", Column::new("note", nullable(DataType::STRING)))?;
-    db.insert(
-        "items",
-        &[
-            Value::Int(6),
-            Value::String("last"),
-            Value::Null,
-            Value::Null,
-        ],
-    )?;
-    assert_eq!(db.scan("items", &Expr::IsNull("note"), |_| Ok(()))?, 4);
+    assert_eq!(db.schema("items")?.generation, 3);
+    assert_eq!(db.scan("items", &Expr::IsNull("note"), |_| Ok(()))?, 3);
     db.backup("snapshot")?;
     drop(db);
     let mut table = Table::open(&root, "items")?;
-    assert_eq!(table.segments().len(), 3);
-    table.rebuild_index()?;
-    assert_eq!(table.check()?, 4);
+    assert_eq!(table.slot_count(), 3);
+    assert_eq!(table.free_slot_count(), 0);
+    assert_eq!(table.check()?, 3);
     assert!(table.remove(1)?);
-    assert!(table.get(1)?.is_none());
     drop(table);
     let mut restored = Database::restore(
         temp.0.join("db_backups/snapshot"),
         temp.0.join("restored"),
         &[],
     )?;
-    assert_eq!(restored.scan("items", &Expr::All, |r| r.validate())?, 4);
+    assert_eq!(restored.scan("items", &Expr::All, |r| r.validate())?, 3);
     assert_eq!(
         restored.get("items", 1, |r| Ok(
-            r.at(2)? == Value::Float(1.0) && r.at(3)? == Value::Null
+            r.at(2)? == Value::Float(0.75) && r.at(3)? == Value::Null
         ))?,
         Some(true)
+    );
+    assert_eq!(
+        restored.data_file("items")?,
+        temp.0.join("restored/items_3")
     );
     Ok(())
 }
@@ -245,7 +225,7 @@ fn main() -> minidb::Result<()> {
     let new = db.get("items", 2, Item::from_row)?.unwrap();
     assert_eq!(new.name, "new");
 "#;
-    fs::write(source.join("src/bin/old.rs"), format!("{}\n{common}\nassert!(new.insert(&mut db).unwrap_err().to_string().contains(\"VERSION\"));\nassert!(new.update(&mut db, 2).unwrap_err().to_string().contains(\"VERSION\"));\nOk(())\n}}", codegen::generate(&old)?))?;
+    fs::write(source.join("src/bin/old.rs"), format!("{}\n{common}\nassert!(new.insert(&mut db).unwrap_err().to_string().contains(\"структур\"));\nassert!(new.update(&mut db, 2).unwrap_err().to_string().contains(\"структур\"));\nOk(())\n}}", codegen::generate(&old)?))?;
     fs::write(source.join("src/bin/new.rs"), format!("{}\n{common}\nassert_eq!(old.accuracy, None);\nassert_eq!(new.accuracy, Some(0.75));\nlet mut visited = 0;\nassert_eq!(Item::scan(&mut db, &minidb::Expr::All, |item| {{ if item.id == 1 {{ assert_eq!(item.accuracy, None); }} visited += 1; Ok(()) }})?, 2);\nassert_eq!(visited, 2);\nlet copy = Item {{ id: 3, ..new }};\ncopy.insert(&mut db)?;\nassert_eq!(db.get(\"items\", 3, Item::from_row)?.unwrap().accuracy, Some(0.75));\nlet changed = Item {{ id: 0, name: \"updated\".into(), ..copy }};\nassert_eq!(changed.update(&mut db, 3)?, 1);\nlet saved = db.get(\"items\", 3, Item::from_row)?.unwrap();\nassert_eq!(saved.id, 3);\nassert_eq!(saved.name, \"updated\");\nassert!(db.get(\"items\", 0, Item::from_row)?.is_none());\nOk(())\n}}", codegen::generate(&new)?))?;
     // Rust-ключевые слова и имена стандартных типов не ломают генерацию.
     let names = source.join("schemas");
@@ -263,7 +243,7 @@ fn main() -> minidb::Result<()> {
             ],
             0,
         );
-        fs::write(names.join(format!("{table}.schema.sql")), schema.to_text())?;
+        fs::write(names.join(format!("{table}_schema")), schema.to_text())?;
     }
     let generated = codegen::generate_dir(&names)?;
     assert_eq!(generated, codegen::generate_dir(&names)?);
@@ -329,7 +309,7 @@ fn main() -> minidb::Result<()> {
     .arg("before")
     .output()?;
     assert!(!too_new.status.success());
-    assert!(String::from_utf8_lossy(&too_new.stderr).contains("более новую VERSION"));
+    assert!(String::from_utf8_lossy(&too_new.stderr).contains("больше колонок"));
     let mut db = Database::open(&root)?;
     db.add_column("items", new.columns[8].clone())?;
     db.insert(

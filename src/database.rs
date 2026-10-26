@@ -130,7 +130,7 @@ impl Database {
         Ok(&self.table(table)?.schema)
     }
 
-    /// Общий каталог хранения таблицы. Конкретные пути: schema_file/segment_files.
+    /// Общий каталог хранения таблицы. Конкретные пути: schema_file/data_file.
     pub fn table_directory(&self, name: &str) -> Result<&Path> {
         self.table(name)?;
         Ok(&self.path)
@@ -140,12 +140,12 @@ impl Database {
         Ok(self.table(name)?.schema_path())
     }
 
-    pub fn segment_files<'a>(&'a self, name: &str) -> Result<impl Iterator<Item = &'a Path>> {
-        Ok(self
-            .table(name)?
-            .segments()
-            .iter()
-            .map(|segment| segment.path()))
+    pub fn data_file(&self, name: &str) -> Result<&Path> {
+        Ok(self.table(name)?.data_file())
+    }
+
+    pub fn vacuum(&mut self, name: &str) -> Result<u64> {
+        self.table_mut(name)?.vacuum()
     }
 
     // Получение отсортированного списка имён таблиц
@@ -201,7 +201,7 @@ impl Database {
         Ok(())
     }
 
-    // Добавление nullable-столбца с новой версией сегмента.
+    // Добавление nullable-столбца с полной перезаписью данных.
     pub fn add_column(&mut self, table: &str, column: Column) -> Result<()> {
         let schema = self.schema(table)?.with_added_column(column.clone())?;
         self.check_schema(&schema)?;
@@ -324,21 +324,6 @@ impl Database {
         Ok(id)
     }
 
-    /// Проверка версии перед любыми изменениями типизированного потребителя.
-    pub fn check_version(&self, table: &str, version: u32) -> Result<()> {
-        self.table(table)?.check_version(version)
-    }
-
-    pub fn insert_versioned(
-        &mut self,
-        table: &str,
-        version: u32,
-        values: &[Value<'_>],
-    ) -> Result<i64> {
-        self.check_version(table, version)?;
-        self.insert(table, values)
-    }
-
     // Получение записи по первичному ключу и передача её в функцию чтения
     pub fn get<T>(
         &mut self,
@@ -391,11 +376,26 @@ impl Database {
             }
             indices
         };
+        let prepared = filter.prepare(schema)?;
+        let key = prepared.primary_key(schema.primary_key);
         let mut buffer = vec![Value::Null; indices.len()];
-        self.scan(table, filter, |row| {
-            buffer = project_row(row, &indices, std::mem::take(&mut buffer), &mut visit)?;
+        let mut count = 0;
+        let mut emit = |row: Row<'_>| -> Result<()> {
+            if prepared.matches(row)? {
+                buffer = project_row(row, &indices, std::mem::take(&mut buffer), &mut visit)?;
+                count += 1;
+            }
             Ok(())
-        })
+        };
+        let table = self.table_mut(table)?;
+        if let Some(key) = key {
+            if let Some(row) = table.get(key)? {
+                emit(row)?;
+            }
+        } else {
+            table.scan(emit)?;
+        }
+        Ok(count)
     }
 
     /// Проверяет пакет перед записью; возвращает число фактически изменённых строк.

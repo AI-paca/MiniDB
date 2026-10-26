@@ -70,9 +70,25 @@ fn main() -> Result<()> {
             .ok_or("Потеряна запись")?;
     }
     let indexed = start.elapsed();
+    let start = Instant::now();
+    let mut select_sum = 0;
+    for i in 0..queries {
+        let key = (i * 7919) % rows + 1;
+        db.select(
+            "items",
+            &["id"],
+            &Expr::Compare("id", Compare::Eq, Value::Int(key)),
+            |values| {
+                select_sum += black_box(values[0].int()?);
+                Ok(())
+            },
+        )?;
+    }
+    let selected = start.elapsed();
     assert_eq!(scan_sum, index_sum);
-    let csv = format!("rows,queries,scan_ms,index_ms,speedup,checksum\n{rows},{queries},{:.3},{:.3},{:.2},{scan_sum}\n",
-        scan.as_secs_f64() * 1000.0, indexed.as_secs_f64() * 1000.0, scan.as_secs_f64() / indexed.as_secs_f64());
+    assert_eq!(scan_sum, select_sum);
+    let csv = format!("rows,queries,scan_ms,index_ms,select_ms,speedup,checksum\n{rows},{queries},{:.3},{:.3},{:.3},{:.2},{scan_sum}\n",
+        scan.as_secs_f64() * 1000.0, indexed.as_secs_f64() * 1000.0, selected.as_secs_f64() * 1000.0, scan.as_secs_f64() / indexed.as_secs_f64());
     print!("{csv}");
     std::fs::write(std::path::Path::new(&path).join("benchmark.csv"), csv)?;
     Ok(())

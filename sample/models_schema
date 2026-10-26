@@ -3,4 +3,6 @@ CREATE TABLE models (
   name STRING(64) NOT NULL,
   version STRING(16) NOT NULL
 );
+VERSION 1
+GENERATION 1
 -- minidb-highest-id: 5

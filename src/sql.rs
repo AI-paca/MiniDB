@@ -100,6 +100,7 @@ pub enum Command {
     Backup(String),
     Restore(String, String),
     Exit,
+    Vacuum(String),
     Create(Schema),
     AddColumn {
         table: String,
@@ -244,6 +245,7 @@ pub(crate) fn stored_schema(text: &str) -> Result<Schema> {
     let mut schema = parser.schema(true)?;
     parser.eat(";");
     let mut seen_version = false;
+    let mut seen_generation = false;
     while parser.pos < parser.tokens.len() {
         if parser.eat("VERSION") {
             if seen_version {
@@ -254,19 +256,15 @@ pub(crate) fn stored_schema(text: &str) -> Result<Schema> {
                 .word()?
                 .parse()
                 .map_err(|_| "VERSION: ожидается u32")?;
-        } else if parser.eat("COLUMNS_AT_VERSION") {
-            let version = parser
-                .word()?
-                .parse()
-                .map_err(|_| "COLUMNS_AT_VERSION: ожидается версия u32")?;
-            parser.need("=")?;
-            let count = parser
-                .word()?
-                .parse()
-                .map_err(|_| "COLUMNS_AT_VERSION: ожидается число колонок")?;
-            if schema.columns_at_version.insert(version, count).is_some() {
-                return Err("Повтор COLUMNS_AT_VERSION".into());
+        } else if parser.eat("GENERATION") {
+            if seen_generation {
+                return Err("Повтор GENERATION".into());
             }
+            seen_generation = true;
+            schema.generation = parser
+                .word()?
+                .parse()
+                .map_err(|_| "GENERATION: ожидается u64")?;
         } else {
             return Err("Лишний текст схемы".into());
         }
@@ -403,6 +401,7 @@ impl Parser {
                 }
             }
             "DESCRIBE" | "DESC" => Command::Describe(self.name()?),
+            "VACUUM" => Command::Vacuum(self.name()?),
             "OPEN" => Command::Open(self.path()?),
             "BACKUP" => Command::Backup(self.path()?),
             "RESTORE" => {

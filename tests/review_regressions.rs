@@ -57,27 +57,20 @@ fn schema_metadata_roundtrips_with_scientific_extremes_and_rejects_bad_tails() -
     assert!(text.contains("1.7976931348623157e308"));
     assert_eq!(Schema::from_text(&text)?, evolved);
     let create = text.split("VERSION 2").next().unwrap();
-    let reordered =
-        format!("{create}COLUMNS_AT_VERSION 2 = 3\nVERSION 2\nCOLUMNS_AT_VERSION 1 = 2\n");
+    let reordered = format!("{create}GENERATION 2\nVERSION 2\n");
     assert_eq!(Schema::from_text(&reordered)?, evolved);
     for tail in [
         "VERSION 2\n",
         "VERSION nonsense\n",
-        "COLUMNS_AT_VERSION 1 = 2\n",
+        "GENERATION 2\n",
         "garbage\n",
     ] {
         assert!(Schema::from_text(&(text.clone() + tail)).is_err(), "{tail}");
     }
     for (bad, message) in [
         ("VERSION nonsense", "VERSION: ожидается u32"),
-        (
-            "COLUMNS_AT_VERSION nope = 2",
-            "COLUMNS_AT_VERSION: ожидается версия u32",
-        ),
-        (
-            "COLUMNS_AT_VERSION 1 = nope",
-            "COLUMNS_AT_VERSION: ожидается число колонок",
-        ),
+        ("GENERATION nope", "GENERATION: ожидается u64"),
+        ("GENERATION -1", "GENERATION: ожидается u64"),
     ] {
         assert!(Schema::from_text(&format!("{create}{bad}"))
             .unwrap_err()
@@ -88,7 +81,7 @@ fn schema_metadata_roundtrips_with_scientific_extremes_and_rejects_bad_tails() -
 }
 
 #[test]
-fn reader_rejects_rolled_back_schema_but_defaults_old_physical_rows() -> Result<()> {
+fn reader_rejects_missing_fields_and_writer_checks_shape_instead_of_metadata() -> Result<()> {
     let old = schema();
     let current = old.with_added_column(added())?;
     let old_layout = Layout::from_schema(&old)?;
@@ -103,16 +96,30 @@ fn reader_rejects_rolled_back_schema_but_defaults_old_physical_rows() -> Result<
     assert!(codegen::check_reader(row, "items", 2, &columns)
         .unwrap_err()
         .to_string()
-        .contains("более новую VERSION"));
+        .contains("больше колонок"));
     assert!(codegen::check_schema_once(&old, "items", 2, &columns).is_err());
+    let current_layout = Layout::from_schema(&current)?;
+    let mut current_bytes = vec![0; current_layout.row_size];
+    record::encode(
+        &current_layout,
+        &current,
+        &[Value::Int(1), Value::String("body"), Value::Null],
+        &mut current_bytes,
+    )?;
     let current_row = Row {
+        bytes: &current_bytes,
         schema: &current,
-        ..row
+        layout: &current_layout,
     };
     codegen::check_schema_once(&current, "items", 2, &columns)?;
     codegen::check_reader(current_row, "items", 2, &columns)?;
     assert_eq!(current_row.at(2)?, Value::Null);
     codegen::check_reader(current_row, "items", 1, &columns[..2])?;
+    let mut metadata_only = current.clone();
+    metadata_only.version = 99;
+    metadata_only.generation = 100;
+    codegen::check_writer(&metadata_only, "items", &columns)?;
+    assert!(codegen::check_writer(&metadata_only, "items", &columns[..2]).is_err());
     let mut invalid = old.clone();
     invalid.version = 0;
     assert!(codegen::generate(&invalid).is_err());
@@ -132,7 +139,7 @@ fn reader_rejects_rolled_back_schema_but_defaults_old_physical_rows() -> Result<
 fn appends_and_deletes_keep_schema_unchanged_until_checkpoint_is_needed() -> Result<()> {
     let temp = Temp::new()?;
     let mut table = Table::create(&temp.0, schema())?;
-    let path = temp.0.join("items.schema.sql");
+    let path = temp.0.join("items_schema");
     let initial = fs::read(&path)?;
     table.insert(&values(100))?;
     assert_eq!(fs::read(&path)?, initial);
@@ -153,9 +160,9 @@ fn appends_and_deletes_keep_schema_unchanged_until_checkpoint_is_needed() -> Res
     assert!(!fs::read_to_string(&path)?.contains("-- minidb-highest-id: 201"));
     table.sync()?;
     assert!(fs::read_to_string(&path)?.contains("-- minidb-highest-id: 201"));
-    assert_eq!(table.segments()[0].path(), temp.0.join("items"));
-    assert_eq!(table.segments()[0].slot_count(), 3);
-    assert_eq!(table.segments()[0].free_slot_count(), 0);
+    assert_eq!(table.data_file(), temp.0.join("items_1"));
+    assert_eq!(table.slot_count(), 3);
+    assert_eq!(table.free_slot_count(), 0);
     Ok(())
 }
 
@@ -180,8 +187,8 @@ fn crash_writer_child() -> Result<()> {
             if mode == "free" {
                 // Состояние после тела FREE, но до коммита LIVE при reuse.
                 fs::write(
-                    root.join("items"),
-                    "# MiniDB text; VERSION 1\n# state\tid\tname\nFREE\n",
+                    root.join("items_1"),
+                    "# MiniDB text; GENERATION 1\n# state\tid\tname\nFREE\n",
                 )?;
             }
         }
@@ -206,7 +213,7 @@ fn auto_id_survives_process_exit_without_drop_or_sync() -> Result<()> {
             "{mode}: {}",
             String::from_utf8_lossy(&out.stderr)
         );
-        let text = fs::read_to_string(root.join("items.schema.sql"))?;
+        let text = fs::read_to_string(root.join("items_schema"))?;
         if mode == "append" || mode == "delete" {
             assert!(!text.contains("minidb-highest-id"));
         }
@@ -218,7 +225,7 @@ fn auto_id_survives_process_exit_without_drop_or_sync() -> Result<()> {
 }
 
 #[test]
-fn unchanged_update_has_the_same_count_and_preserves_files_in_all_segments() -> Result<()> {
+fn unchanged_update_has_the_same_count_and_preserves_the_current_file() -> Result<()> {
     let temp = Temp::new()?;
     let mut db = minidb::Database::open(&temp.0)?;
     db.create(schema())?;
@@ -228,8 +235,7 @@ fn unchanged_update_has_the_same_count_and_preserves_files_in_all_segments() -> 
         "items",
         &[Value::Int(2), Value::String("running"), Value::Null],
     )?;
-    let before1 = fs::read(temp.0.join("items"))?;
-    let before2 = fs::read(temp.0.join("v2/items"))?;
+    let before = fs::read(db.data_file("items")?)?;
     assert_eq!(
         db.update(
             "items",
@@ -242,8 +248,7 @@ fn unchanged_update_has_the_same_count_and_preserves_files_in_all_segments() -> 
         db.update("items", &minidb::Expr::All, &[("score", Value::Null)])?,
         0
     );
-    assert_eq!(fs::read(temp.0.join("items"))?, before1);
-    assert_eq!(fs::read(temp.0.join("v2/items"))?, before2);
+    assert_eq!(fs::read(db.data_file("items")?)?, before);
     assert_eq!(
         db.update(
             "items",

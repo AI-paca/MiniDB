@@ -13,24 +13,13 @@ pub(crate) struct TextFile {
     path: PathBuf,
     schema: Schema,
     layout: Layout,
-    version: u32,
-    writable: bool,
     dirty: Cell<bool>,
 }
 
 impl TextFile {
-    fn new(
-        path: &Path,
-        schema: &Schema,
-        count: usize,
-        version: u32,
-        writable: bool,
-    ) -> Result<Self> {
-        let layout = Layout::from_prefix(schema, count)?;
+    fn new(path: &Path, schema: &Schema) -> Result<Self> {
+        let layout = Layout::from_schema(schema)?;
         let mut physical = schema.clone();
-        physical.columns.truncate(count);
-        physical.version = 1;
-        physical.columns_at_version.clear();
         // Чтение не применяет текущие MIN/MAX/NOT NULL к старым данным.
         for column in &mut physical.columns {
             column.data_type.nullable = true;
@@ -47,20 +36,18 @@ impl TextFile {
             path: path.to_owned(),
             schema: physical,
             layout,
-            version,
-            writable,
             dirty: Cell::new(false),
         })
     }
 
-    pub fn create(path: &Path, schema: &Schema, count: usize, version: u32) -> Result<Self> {
+    pub fn create(path: &Path, schema: &Schema) -> Result<Self> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
         let file = OpenOptions::new().write(true).create_new(true).open(path)?;
         drop(file);
         let result = (|| {
-            let file = Self::new(path, schema, count, version, true)?;
+            let file = Self::new(path, schema)?;
             file.dirty.set(true);
             file.sync_all()?;
             Ok(file)
@@ -71,20 +58,14 @@ impl TextFile {
         result
     }
 
-    pub fn open(
-        path: &Path,
-        schema: &Schema,
-        count: usize,
-        version: u32,
-        writable: bool,
-    ) -> Result<Self> {
-        let mut file = Self::new(path, schema, count, version, writable)?;
+    pub fn open(path: &Path, schema: &Schema) -> Result<Self> {
+        let mut file = Self::new(path, schema)?;
         file.reload()?;
         Ok(file)
     }
 
     fn header(&self) -> String {
-        format!("# MiniDB text; VERSION {}", self.version)
+        format!("# MiniDB text; GENERATION {}", self.schema.generation)
     }
 
     pub fn reload(&mut self) -> Result<()> {
@@ -92,11 +73,7 @@ impl TextFile {
             .map_err(|error| format!("Не удалось прочитать UTF-8 {}: {error}. Бинарная реализация находится в ветке binary", self.path.display()))?;
         let mut lines = text.lines();
         if lines.next() != Some(self.header().as_str()) {
-            return Err(format!(
-                "Неверный заголовок текстового сегмента {}",
-                self.path.display()
-            )
-            .into());
+            return Err(format!("Неверный заголовок файла данных {}", self.path.display()).into());
         }
         let mut bytes = Vec::new();
         for (line_index, line) in lines.enumerate() {
@@ -161,31 +138,8 @@ impl TextFile {
     }
 
     pub fn set_len(&mut self, len: u64) -> io::Result<()> {
-        self.ensure_writable()?;
         let len = usize::try_from(len).map_err(io::Error::other)?;
         self.cursor.get_mut().resize(len, 0);
-        self.dirty.set(true);
-        Ok(())
-    }
-
-    fn ensure_writable(&self) -> io::Result<()> {
-        if !self.writable {
-            return Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Тела старого сегмента доступны только для чтения",
-            ));
-        }
-        Ok(())
-    }
-
-    // Старому сегменту разрешено менять только состояние строки.
-    pub fn mark_dead(&mut self, offset: u64) -> io::Result<()> {
-        let byte = self
-            .cursor
-            .get_mut()
-            .get_mut(offset as usize)
-            .ok_or_else(|| io::Error::other("Нет слота"))?;
-        *byte = FLAG_DEAD;
         self.dirty.set(true);
         Ok(())
     }
@@ -201,21 +155,10 @@ impl TextFile {
         if !self.dirty.get() {
             return Ok(());
         }
-        let mut name = self
-            .path
-            .file_name()
-            .ok_or_else(|| io::Error::other("Нет имени сегмента"))?
-            .to_os_string();
-        name.push(".tmp");
-        let temporary = self.path.with_file_name(name);
-        let mut created = false;
+        let (temporary, output) = crate::storage::temporary_file(&self.path)
+            .map_err(|error| io::Error::other(error.to_string()))?;
         let result = (|| -> Result<()> {
-            let file = OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&temporary)?;
-            let mut file = BufWriter::with_capacity(64 * 1024, file);
-            created = true;
+            let mut file = BufWriter::with_capacity(64 * 1024, output);
             writeln!(file, "{}", self.header())?;
             writeln!(
                 file,
@@ -263,11 +206,11 @@ impl TextFile {
             drop(file);
             fs::rename(&temporary, &self.path)?;
             if barrier {
-                crate::storage::sync_directory(self.path.parent().ok_or("Нет каталога сегмента")?)?;
+                crate::storage::sync_directory(self.path.parent().ok_or("Нет каталога таблицы")?)?;
             }
             Ok(())
         })();
-        if result.is_err() && created {
+        if result.is_err() {
             let _ = fs::remove_file(&temporary);
         }
         result.map_err(|error| io::Error::other(error.to_string()))?;
@@ -304,7 +247,6 @@ impl Seek for TextFile {
 }
 impl Write for TextFile {
     fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
-        self.ensure_writable()?;
         self.dirty.set(true);
         self.cursor.write(bytes)
     }

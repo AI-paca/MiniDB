@@ -54,7 +54,7 @@ fn a_schema_text_file_roundtrip() -> Result<()> {
     });
     original.validator = Some("rule_v1".into());
     let table = Table::create(&temp.0, original.clone())?;
-    let text = fs::read_to_string(temp.0.join("MixedCase.schema.sql"))?;
+    let text = fs::read_to_string(temp.0.join("MixedCase_schema"))?;
     let decoded = Schema::from_text(&text)?;
     assert_eq!(decoded, original);
     assert_eq!(decoded.to_text(), original.to_text());
@@ -69,12 +69,9 @@ fn a_schema_text_file_roundtrip() -> Result<()> {
             b.references.as_ref().map(|r| (&r.table, &r.column))
         );
     }
-    assert!(temp.0.join("MixedCase.schema.sql").exists());
+    assert!(temp.0.join("MixedCase_schema").exists());
     assert!(Table::create(&temp.0, original).is_err());
-    assert_eq!(
-        fs::read_to_string(temp.0.join("MixedCase.schema.sql"))?,
-        text
-    );
+    assert_eq!(fs::read_to_string(temp.0.join("MixedCase_schema"))?, text);
     drop(table);
     assert_eq!(Table::open(&temp.0, "MixedCase")?.schema().to_text(), text);
     assert!(Schema::from_text("broken schema").is_err());
@@ -249,7 +246,7 @@ fn e_foreign_keys_create_insert_update_and_restrict() -> Result<()> {
         0,
     );
     assert!(db.create_table(bad).is_err());
-    assert!(!root.join("bad.schema.sql").exists());
+    assert!(!root.join("bad_schema").exists());
     let error = db
         .insert(
             "experiments",
@@ -280,7 +277,7 @@ fn e_foreign_keys_create_insert_update_and_restrict() -> Result<()> {
             "experiments",
             &Expr::Compare("dataset_id", Compare::Eq, Value::Int(1))
         )?,
-        4
+        5
     );
     assert_eq!(db.delete("datasets", &dataset)?, 1);
     let child = Schema::new(
@@ -311,7 +308,7 @@ fn e_foreign_keys_create_insert_update_and_restrict() -> Result<()> {
     drop(db);
     let mut db = Database::open(&root)?;
     assert_eq!(db.scan("datasets", &Expr::All, |_| Ok(()))?, 4);
-    assert_eq!(db.scan("experiments", &Expr::All, |_| Ok(()))?, 16);
+    assert_eq!(db.scan("experiments", &Expr::All, |_| Ok(()))?, 15);
     Ok(())
 }
 
@@ -326,36 +323,33 @@ fn e_backup_restore_and_failed_copy_preserve_root() -> Result<()> {
     db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(2)))?;
     db.backup("snapshot")?;
     let backup = temp.0.join("db_backups/snapshot");
-    let saved = fs::read(root.join("items"))?;
-    assert_eq!(fs::read(backup.join("items"))?, saved);
+    let saved = fs::read(root.join("items_1"))?;
+    assert_eq!(fs::read(backup.join("items_1"))?, saved);
     assert_eq!(
-        fs::read(backup.join("items.schema.sql"))?,
-        fs::read(root.join("items.schema.sql"))?
+        fs::read(backup.join("items_schema"))?,
+        fs::read(root.join("items_schema"))?
     );
     assert!(db.backup("snapshot").is_err());
     db.insert("items", &values(3))?;
     assert!(Database::restore("snapshot", &root, &[]).is_err());
     drop(db);
     // Проверяем сохранность базы при ошибке восстановления
-    let current = fs::read(root.join("items"))?;
+    let current = fs::read(root.join("items_1"))?;
     assert!(Database::restore(temp.0.join("missing"), &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items"))?, current);
+    assert_eq!(fs::read(root.join("items_1"))?, current);
     let broken = temp.0.join("broken");
     fs::create_dir(&broken)?;
-    fs::copy(
-        backup.join("items.schema.sql"),
-        broken.join("items.schema.sql"),
-    )?;
-    fs::write(broken.join("items"), b"partial")?;
+    fs::copy(backup.join("items_schema"), broken.join("items_schema"))?;
+    fs::write(broken.join("items_1"), b"partial")?;
     assert!(Database::restore(&broken, &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items"))?, current);
+    assert_eq!(fs::read(root.join("items_1"))?, current);
     let legacy = temp.0.join("legacy");
     fs::create_dir(&legacy)?;
     fs::write(legacy.join("journal.log"), b"old format")?;
     assert!(Database::restore(&legacy, &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items"))?, current);
+    assert_eq!(fs::read(root.join("items_1"))?, current);
     let mut restored = Database::restore("snapshot", &root, &[])?;
-    assert_eq!(fs::read(root.join("items"))?, saved);
+    assert_eq!(fs::read(root.join("items_1"))?, saved);
     assert_eq!(restored.scan("items", &Expr::All, |_| Ok(()))?, 1);
     assert!(restored.get("items", 1, |_| Ok(()))?.is_some());
     assert!(restored.get("items", 2, |_| Ok(()))?.is_none());
@@ -384,11 +378,11 @@ fn update_null_pk_preserves_id_and_remove_reports_presence() -> Result<()> {
     table.insert(&values(i64::MAX))?;
     table.update(4, &[Value::Null, Value::Null, Value::Float(1.0)])?;
     assert!(table.get(4)?.is_some());
-    let before = fs::read(temp.0.join("items"))?;
+    let before = fs::read(temp.0.join("items_1"))?;
     assert!(table
         .insert(&[Value::Null, Value::Null, Value::Float(0.0)])
         .is_err());
-    assert_eq!(fs::read(temp.0.join("items"))?, before);
+    assert_eq!(fs::read(temp.0.join("items_1"))?, before);
     Ok(())
 }
 
@@ -402,7 +396,7 @@ fn high_water_survives_slot_reuse_lower_pk_and_backup() -> Result<()> {
     assert_eq!(db.delete("items", &Expr::All)?, 1);
     db.insert("items", &values(1))?;
     assert_eq!(
-        fs::read_to_string(root.join("items"))?
+        fs::read_to_string(root.join("items_1"))?
             .lines()
             .filter(|l| l.starts_with("LIVE\t"))
             .count(),

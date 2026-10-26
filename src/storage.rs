@@ -1,6 +1,52 @@
 // Текстовый формат схемы таблицы
 use crate::{Kind, Schema};
 use std::fmt::Write;
+use std::sync::atomic::{AtomicU64, Ordering};
+
+static NEXT_TEMPORARY: AtomicU64 = AtomicU64::new(0);
+
+// Уникальное служебное имя не блокирует запись после обрыва предыдущего процесса
+// и не перезаписывает пользовательские файлы с суффиксом .tmp.
+pub(crate) fn temporary_file(
+    path: &std::path::Path,
+) -> crate::Result<(std::path::PathBuf, std::fs::File)> {
+    loop {
+        let mut name = path.file_name().ok_or("Нет имени файла")?.to_os_string();
+        name.push(format!(
+            ".tmp.{}.{}",
+            std::process::id(),
+            NEXT_TEMPORARY.fetch_add(1, Ordering::Relaxed)
+        ));
+        let temporary = path.with_file_name(name);
+        match std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+        {
+            Ok(file) => return Ok((temporary, file)),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
+    }
+}
+
+pub(crate) fn is_temporary(filename: &str, table: &str) -> bool {
+    let Some((base, suffix)) = filename.rsplit_once(".tmp.") else {
+        return false;
+    };
+    let mut parts = suffix.split('.');
+    if !matches!((parts.next(), parts.next(), parts.next()), (Some(pid), Some(serial), None)
+        if !pid.is_empty() && !serial.is_empty() && pid.bytes().all(|b| b.is_ascii_digit()) && serial.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return false;
+    }
+    base == format!("{table}_schema")
+        || base
+            .strip_prefix(&format!("{table}_"))
+            .is_some_and(|generation| {
+                !generation.is_empty() && generation.bytes().all(|b| b.is_ascii_digit())
+            })
+}
 
 // Получение текстового описания схемы таблицы
 pub fn schema_text(schema: &Schema) -> String {
@@ -43,9 +89,7 @@ pub fn schema_text(schema: &Schema) -> String {
     }
     text.push_str(";\n");
     let _ = writeln!(text, "VERSION {}", schema.version);
-    for (version, count) in schema.history() {
-        let _ = writeln!(text, "COLUMNS_AT_VERSION {version} = {count}");
-    }
+    let _ = writeln!(text, "GENERATION {}", schema.generation);
     text
 }
 
@@ -58,80 +102,44 @@ pub(crate) fn sync_directory(path: &std::path::Path) -> crate::Result<()> {
     Ok(())
 }
 
-/// Новая схема — name.schema.sql; прежняя name.schema остаётся читаемой.
-pub(crate) fn schema_path(root: &std::path::Path, name: &str) -> crate::Result<std::path::PathBuf> {
-    let canonical = root.join(format!("{name}.schema.sql"));
-    let previous = root.join(format!("{name}.schema"));
-    if canonical.exists() && previous.exists() {
-        return Err(format!("Две схемы таблицы {name}: {name}.schema.sql и {name}.schema").into());
-    }
-    Ok(if previous.exists() {
-        previous
-    } else {
-        canonical
-    })
+/// Единственное каноническое имя схемы; каталог таблиц выводится из *_schema.
+pub(crate) fn schema_path(root: &std::path::Path, name: &str) -> std::path::PathBuf {
+    root.join(format!("{name}_schema"))
 }
 
-/// v1 рядом со схемой; последующие версии — в каталогах vN, без расширений.
-pub(crate) fn segment_path(root: &std::path::Path, name: &str, version: u32) -> std::path::PathBuf {
-    if version == 1 {
-        root.join(name)
-    } else {
-        root.join(format!("v{version}")).join(name)
-    }
+pub(crate) fn data_path(root: &std::path::Path, name: &str, generation: u64) -> std::path::PathBuf {
+    root.join(format!("{name}_{generation}"))
 }
 
-pub(crate) fn existing_segment(
+/// Только десятичные суффиксы: schema/tmp/backup и каталоги не являются данными.
+pub(crate) fn data_files(
     root: &std::path::Path,
     name: &str,
-    version: u32,
-) -> crate::Result<std::path::PathBuf> {
-    let binary = root.join(format!("{name}.v{version}.data"));
-    if binary.exists() || root.join(format!("{name}.data")).exists() {
-        return Err("Каталог содержит бинарные данные: откройте его в ветке binary; текстовая ветка хранит UTF-8 без расширений".into());
-    }
-    Ok(segment_path(root, name, version))
-}
-
-pub(crate) fn segment_files(
-    root: &std::path::Path,
-    name: &str,
-) -> crate::Result<Vec<std::path::PathBuf>> {
+) -> crate::Result<Vec<(u64, std::path::PathBuf)>> {
     let mut files = Vec::new();
-    if root.join(format!("{name}.data")).exists() {
-        return Err("Бинарная база: используйте ветку binary".into());
-    }
-    if root.join(name).exists() {
-        files.push(root.join(name));
-    }
     for entry in std::fs::read_dir(root)? {
         let entry = entry?;
-        let filename = entry.file_name();
-        if filename
-            .to_str()
-            .and_then(|s| s.strip_prefix(&format!("{name}.v")))
-            .and_then(|s| s.strip_suffix(".data"))
-            .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
-        {
-            return Err("Бинарная база: используйте ветку binary".into());
+        if !entry.file_type()?.is_file() {
+            continue;
         }
-        let Some(version) = filename.to_str().and_then(|s| s.strip_prefix('v')) else {
+        let filename = entry.file_name();
+        let Some(suffix) = filename
+            .to_str()
+            .and_then(|s| s.strip_prefix(&format!("{name}_")))
+        else {
             continue;
         };
-        if !version.is_empty()
-            && version.bytes().all(|b| b.is_ascii_digit())
-            && entry.file_type()?.is_dir()
-        {
-            let path = entry.path().join(name);
-            if path.exists() {
-                files.push(path);
-            }
+        if suffix.is_empty() || !suffix.bytes().all(|b| b.is_ascii_digit()) {
+            continue;
+        }
+        if let Ok(generation) = suffix.parse::<u64>() {
+            files.push((generation, entry.path()));
         }
     }
+    files.sort_by_key(|(generation, _)| *generation);
     Ok(files)
 }
 
-/// Точный фильтр *.schema.sql / *.schema, без эвристик по содержимому или dot-файлам.
 pub(crate) fn schema_files(
     root: &std::path::Path,
 ) -> crate::Result<Vec<(String, std::path::PathBuf)>> {
@@ -145,10 +153,10 @@ pub(crate) fn schema_files(
         let Some(filename) = filename.to_str() else {
             continue;
         };
-        let Some(name) = filename
-            .strip_suffix(".schema.sql")
-            .or_else(|| filename.strip_suffix(".schema"))
-        else {
+        if filename.ends_with(".schema.sql") || filename.ends_with(".schema") {
+            return Err("Старый формат схемы/сегментов не поддерживается; экспортируйте данные прежней программой или пересоздайте базу через sample.sh".into());
+        }
+        let Some(name) = filename.strip_suffix("_schema") else {
             continue;
         };
         crate::types::identifier(name)?;

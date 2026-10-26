@@ -316,7 +316,7 @@ fn text_roundtrips_controls_empty_strings_float_and_case() -> Result<()> {
         })?,
         5
     );
-    let text = fs::read_to_string(temp.0.join("MixedCase"))?;
+    let text = fs::read_to_string(temp.0.join("MixedCase_1"))?;
     assert!(!text.contains('\0'));
     assert!(text.contains("\\u{0}"));
     Ok(())

@@ -5,4 +5,6 @@ CREATE TABLE experiments (
   accuracy FLOAT MIN 0e0 MAX 1e0 NOT NULL,
   status STRING(16) NOT NULL
 );
+VERSION 1
+GENERATION 1
 -- minidb-highest-id: 20

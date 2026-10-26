@@ -1,6 +1,6 @@
 use crate::types::identifier;
 use crate::{DataType, Kind, Result};
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 // Ссылка на столбец другой таблицы
 #[derive(Clone, Debug)]
@@ -59,8 +59,8 @@ impl PartialEq for Column {
 #[derive(Clone, Debug)]
 pub struct Schema {
     pub version: u32,
-    /// Число физических колонок для каждой версии. Пусто только для исходной v1.
-    pub columns_at_version: BTreeMap<u32, usize>,
+    /// Поколение единственного файла данных; версия схемы от него независима.
+    pub generation: u64,
     pub name: String,         // Имя таблицы
     pub columns: Vec<Column>, // Столбцы таблицы
     pub primary_key: usize,   // Номер столбца первичного ключа
@@ -73,7 +73,7 @@ impl Schema {
     pub fn new(name: &str, columns: Vec<Column>, primary_key: usize) -> Self {
         Self {
             version: 1,
-            columns_at_version: BTreeMap::new(),
+            generation: 1,
             name: name.into(),
             columns,
             primary_key,
@@ -81,25 +81,18 @@ impl Schema {
         }
     }
 
-    pub fn history(&self) -> BTreeMap<u32, usize> {
-        if self.version == 1 && self.columns_at_version.is_empty() {
-            BTreeMap::from([(1, self.columns.len())])
-        } else {
-            self.columns_at_version.clone()
-        }
-    }
-
     /// Подготовка следующей схемы без изменения файлов.
     pub fn with_added_column(&self, column: Column) -> Result<Self> {
         let mut next = self.clone();
-        next.columns_at_version = self.history();
         next.version = self
             .version
             .checked_add(1)
             .ok_or("Исчерпаны версии схемы")?;
         next.columns.push(column);
-        next.columns_at_version
-            .insert(next.version, next.columns.len());
+        next.generation = self
+            .generation
+            .checked_add(1)
+            .ok_or("Исчерпаны поколения")?;
         check_evolution(self, &next)?;
         Ok(next)
     }
@@ -154,27 +147,8 @@ impl Schema {
         if self.version == 0 {
             return Err("VERSION должен быть >= 1".into());
         }
-        let history = self.history();
-        if history.len() != self.version as usize
-            || history.get(&self.version) != Some(&self.columns.len())
-        {
-            return Err("Неполная история COLUMNS_AT_VERSION".into());
-        }
-        let mut previous = 0;
-        for (expected, (&version, &count)) in (1u32..).zip(&history) {
-            if version != expected || count <= previous || count > self.columns.len() {
-                return Err("Некорректная история COLUMNS_AT_VERSION".into());
-            }
-            previous = count;
-        }
-        let initial = history[&1];
-        if self.columns[initial..]
-            .iter()
-            .any(|c| !c.data_type.nullable)
-        {
-            return Err(
-                "Новая колонка должна допускать NULL: старые записи не имеют значения".into(),
-            );
+        if self.generation == 0 {
+            return Err("GENERATION должен быть >= 1".into());
         }
         identifier(&self.name)?;
         if let Some(name) = &self.validator {
@@ -191,9 +165,9 @@ impl Schema {
                 return Err("Повторное имя столбца".into());
             }
         }
-        for (index, col) in self.columns.iter().enumerate() {
+        for col in &self.columns {
             if matches!(col.data_type.kind, Kind::Null)
-                && (index < initial || !col.data_type.nullable || col.references.is_some())
+                && (self.version == 1 || !col.data_type.nullable || col.references.is_some())
             {
                 return Err("Отложенный тип NULL разрешён только nullable-столбцам, добавленным после v1, без REFERENCES".into());
             }
@@ -202,22 +176,19 @@ impl Schema {
             .columns
             .get(self.primary_key)
             .ok_or("Нет PRIMARY KEY")?;
-        if self.primary_key >= initial
-            || !matches!(pk.data_type.kind, Kind::Int { .. })
-            || pk.data_type.nullable
-        {
+        if !matches!(pk.data_type.kind, Kind::Int { .. }) || pk.data_type.nullable {
             return Err("PRIMARY KEY должен быть INT NOT NULL".into());
         }
         Ok(())
     }
 }
 
-/// Разрешение отложенного типа не добавляет полей и не меняет историю ADD COLUMN.
+/// Разрешение отложенного типа не добавляет полей и не меняет VERSION.
 pub(crate) fn check_resolution(old: &Schema, new: &Schema) -> Result<()> {
     old.check()?;
     new.check()?;
     if old.version != new.version
-        || old.history() != new.history()
+        || old.generation != new.generation
         || old.name != new.name
         || old.primary_key != new.primary_key
         || old.validator != new.validator
@@ -246,15 +217,12 @@ pub fn check_evolution(old: &Schema, new: &Schema) -> Result<()> {
         || old.primary_key != new.primary_key
         || old.validator != new.validator
         || old.version.checked_add(1) != Some(new.version)
+        || old.generation.checked_add(1) != Some(new.generation)
         || new.columns.len() <= old.columns.len()
         || !new.columns.starts_with(&old.columns)
         || new.columns[old.columns.len()..]
             .iter()
             .any(|c| !c.data_type.nullable)
-        || old
-            .history()
-            .iter()
-            .any(|(v, n)| new.columns_at_version.get(v) != Some(n))
     {
         return Err(
             "Эволюция схемы допускает только добавление nullable-колонок в конец с VERSION + 1"
@@ -271,6 +239,6 @@ impl PartialEq for Schema {
             && self.columns == other.columns
             && self.primary_key == other.primary_key
             && self.validator == other.validator
-            && self.history() == other.history()
+            && self.generation == other.generation
     }
 }

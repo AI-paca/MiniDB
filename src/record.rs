@@ -123,9 +123,6 @@ impl<'a> Row<'a> {
         if i >= self.schema.columns.len() {
             return Err("Нет столбца с таким номером".into());
         }
-        if i >= self.layout.cols.len() {
-            return Ok(Value::Null);
-        }
         let col = self
             .layout
             .cols
@@ -187,13 +184,7 @@ impl<'a> Row<'a> {
             return Err("Размер записи не соответствует Layout".into());
         }
         self.flag()?;
-        for (i, col) in self
-            .schema
-            .columns
-            .iter()
-            .take(self.layout.cols.len())
-            .enumerate()
-        {
+        for (i, col) in self.schema.columns.iter().enumerate() {
             col.data_type.validate(self.at(i)?)?;
         }
         Ok(())

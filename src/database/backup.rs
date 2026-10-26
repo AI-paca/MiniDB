@@ -62,7 +62,7 @@ fn sibling(path: &Path, suffix: &str) -> Result<PathBuf> {
 
 fn empty_error(source: &Path) -> Box<dyn std::error::Error + Send + Sync> {
     if source.join("journal.log").exists() || source.join("journal.wal").exists() {
-        "Копия в старом формате: нужны *.schema.sql (или *.schema) и бинарные сегменты".into()
+        "Копия в старом формате: нужны *_schema и данные текущего поколения".into()
     } else {
         "В базе нет ни одной таблицы: копировать нечего".into()
     }
@@ -101,8 +101,11 @@ fn copy_tables(source: &Path, destination: &Path) -> Result<()> {
         return Err(empty_error(source));
     }
     for (table, schema) in schemas {
-        let mut paths = vec![schema];
-        paths.extend(crate::storage::segment_files(source, &table)?);
+        let definition = crate::Schema::from_text(&fs::read_to_string(&schema)?)?;
+        let paths = [
+            schema,
+            crate::storage::data_path(source, &table, definition.generation),
+        ];
         for path in paths {
             let target = destination.join(path.strip_prefix(source)?);
             if let Some(parent) = target.parent() {

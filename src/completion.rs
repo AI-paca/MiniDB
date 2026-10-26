@@ -31,7 +31,7 @@ pub fn complete(db: &Database, text: &str) -> (usize, Vec<String>) {
         options.extend(
             [
                 "help", "tables", "describe", "open", "backup", "restore", "exit", "SELECT",
-                "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "SHOW",
+                "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "SHOW", "VACUUM",
             ]
             .map(str::to_owned),
         );
@@ -43,6 +43,7 @@ pub fn complete(db: &Database, text: &str) -> (usize, Vec<String>) {
         "desc",
         "join",
         "references",
+        "vacuum",
     ]
     .contains(&last)
     {

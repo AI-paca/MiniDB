@@ -1,8 +1,8 @@
-# MiniDB text; VERSION 1
+# MiniDB text; GENERATION 1
 # state	id	dataset_id	model_id	accuracy	status
-LIVE	1	1	1	0.7	"running"
-LIVE	2	2	1	0.725	"completed"
-LIVE	3	3	1	0.75	"completed"
+LIVE	1	1	1	0.91	"completed"
+LIVE	2	1	2	0.88	"completed"
+LIVE	3	2	1	0.76	"running"
 LIVE	4	4	1	0.775	"running"
 LIVE	5	5	1	0.8	"completed"
 LIVE	6	1	2	0.825	"completed"

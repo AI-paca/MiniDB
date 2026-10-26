@@ -18,6 +18,7 @@ impl Context {
             Command::Update { table, .. } => ("update", Some(table.as_str())),
             Command::Delete { table, .. } => ("delete", Some(table.as_str())),
             Command::Describe(table) => ("describe", Some(table.as_str())),
+            Command::Vacuum(table) => ("vacuum", Some(table.as_str())),
             Command::Open(_) => ("open", None),
             Command::Backup(_) => ("backup", None),
             Command::Restore(_, _) => ("restore", None),
@@ -56,7 +57,7 @@ impl Context {
             .unwrap_or_default();
         let action = [
             "select", "insert", "update", "delete", "alter", "create", "describe", "show", "open",
-            "backup", "restore", "drop", "help",
+            "backup", "restore", "drop", "help", "vacuum",
         ]
         .into_iter()
         .min_by_key(|candidate| distance(&first, candidate))
@@ -77,7 +78,10 @@ impl Context {
                     .map(|pair| pair[1].clone())
             })
             .or_else(|| {
-                if matches!(action.as_str(), "update" | "describe" | "delete" | "insert") {
+                if matches!(
+                    action.as_str(),
+                    "update" | "describe" | "delete" | "insert" | "vacuum"
+                ) {
                     words.get(1).cloned()
                 } else {
                     None
@@ -134,6 +138,7 @@ impl Context {
             }
             "delete" => format!("Удалить одну строку с данными:\n  DELETE FROM {table} WHERE {pk} = 1;\nУдалить ВСЕ строки, сохранив таблицу и столбцы:\n  DELETE FROM {table};\nDELETE удаляет строки; удаление столбца — отдельная операция DROP COLUMN, пока не поддерживается."),
             "describe" => format!("Посмотреть столбцы и ограничения:\n  DESCRIBE {table};"),
+            "vacuum" => format!("Убрать удалённые слоты из файла данных:\n  VACUUM {table};\nСтруктура и VERSION сохраняются; GENERATION растёт при уплотнении."),
             "show" => "Показать таблицы:\n  SHOW TABLES;\nПоказать каталог базы:\n  SHOW DATABASE;".into(),
             "open" => "Открыть базу:\n  OPEN 'sample';".into(),
             "backup" => "Создать резервную копию:\n  BACKUP first;".into(),

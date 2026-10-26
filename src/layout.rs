@@ -29,14 +29,7 @@ impl Layout {
     // Расчёт размеров и смещений полей по схеме
     pub fn from_schema(schema: &Schema) -> Result<Self> {
         schema.check()?;
-        Self::from_prefix(schema, schema.columns.len())
-    }
-
-    pub fn from_prefix(schema: &Schema, count: usize) -> Result<Self> {
-        schema.check()?;
-        if count == 0 || count > schema.columns.len() {
-            return Err("Некорректное число колонок Layout".into());
-        }
+        let count = schema.columns.len();
         let null_bytes = count.div_ceil(8);
         let header = NULL_BITMAP_OFFSET
             .checked_add(null_bytes)
@@ -67,7 +60,7 @@ impl Layout {
         }
         let null_bytes = self.cols.len().div_ceil(8);
         if self.cols.is_empty()
-            || self.cols.len() > schema.columns.len()
+            || self.cols.len() != schema.columns.len()
             || self.null_bytes != null_bytes
             || self.header != NULL_BITMAP_OFFSET + null_bytes
         {
