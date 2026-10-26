@@ -2,89 +2,35 @@ name: Update PNG from Drawio
 
 on:
   push:
+    branches: ['**']
     paths:
-      - '**.drawio'
+      - '**/*.drawio'
+      - 'scripts/render-diagrams.sh'
+      - 'scripts/update-diagrams-readme.py'
+      - 'scripts/commit-generated-docs.sh'
+      - '.github/workflows/drawio-to-png.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  update-png:
+  diagrams:
     runs-on: ubuntu-latest
     permissions:
       contents: write
-
     steps:
-      # Checkout the repository with full history
+      # act --bind supplies local files and never publishes a commit.
       - uses: actions/checkout@v4
+        if: ${{ env.ACT != 'true' }}
         with:
-          fetch-depth: 0
+          ref: ${{ github.ref_name }}
 
-      # Get changed files
-      - name: Get changed files
-        id: changed_files
+      - name: Export drawio and update README
+        run: bash scripts/render-diagrams.sh
+
+      - name: Commit rendered diagrams
+        if: ${{ env.ACT != 'true' }}
         run: |
-          if git rev-parse --verify HEAD~1 > /dev/null 2>&1; then
-            CHANGED_FILES=$(git diff --name-only --diff-filter=d HEAD~1 HEAD | tr '\n' ',' | sed 's/,$//')
-          else
-            CHANGED_FILES=$(git ls-files | tr '\n' ',' | sed 's/,$//')
-          fi
-          echo "Debug: CHANGED_FILES='${CHANGED_FILES}'"
-          echo "changed_files=${CHANGED_FILES}" >> $GITHUB_OUTPUT
-
-      # Filter .drawio files
-      - name: Filter .drawio files
-        id: drawio_files
-        run: |
-          DRAWIO_FILES=$(echo "${{ steps.changed_files.outputs.changed_files }}" | tr ',' '\n' | grep -E '\.drawio$' | tr '\n' ',' | sed 's/,$//' || true)
-          echo "Debug: DRAWIO_FILES='${DRAWIO_FILES}'"
-          echo "drawio_files=${DRAWIO_FILES}" >> $GITHUB_OUTPUT
-
-      # Convert .drawio files to PNG
-      - name: Convert drawio to PNG
-        if: steps.drawio_files.outputs.drawio_files != ''
-        run: |
-          mkdir -p diagrams
-          for DRAWIO_FILE in $(echo "${DRAWIO_FILES}" | tr ',' '\n'); do
-            echo "Processing $DRAWIO_FILE"
-
-            # Run Docker container to convert .drawio to PNG
-            docker run --rm \
-              -v ${PWD}:/workspace \
-              -v ${PWD}/diagrams:/output \
-              rlespinasse/drawio-export \
-              -f png --remove-page-suffix -t -o /output /workspace/"$DRAWIO_FILE"
-            
-            # Check if PNG files were generated
-            GENERATED_FILES=$(ls diagrams/*.png 2>/dev/null | grep -E "${DRAWIO_FILE%.drawio}-[0-9]+.png|${DRAWIO_FILE%.drawio}.png")
-            if [ -z "$GENERATED_FILES" ]; then
-              echo "Error: No PNG files generated for $DRAWIO_FILE" >&2
-              exit 1
-            fi
-
-            # Update README.md with new image links
-            for PNG_PATH in $GENERATED_FILES; do
-              PNG_FILE=$(basename "$PNG_PATH")
-              RELATIVE_PATH="diagrams/$PNG_FILE"
-              
-              # Check if the link already exists in README.md
-              if ! grep -q "$RELATIVE_PATH" README.md; then
-                echo "Adding new image link for $RELATIVE_PATH"
-                echo "" >> README.md  # Add an empty line before the new image
-                echo "![${PNG_FILE}](${RELATIVE_PATH})" >> README.md
-              else
-                echo "Link for $RELATIVE_PATH already exists in README.md"
-              fi
-            done
-          done
-        env:
-          DRAWIO_FILES: ${{ steps.drawio_files.outputs.drawio_files }}
-
-      # Commit and push changes
-      - name: Commit and push changes
-        if: steps.drawio_files.outputs.drawio_files != ''
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add diagrams/*.png README.md
-          git commit -m "Auto-update PNGs and documentation" || exit 0
-          git push
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          bash scripts/commit-generated-docs.sh 'docs: render diagrams' README.md diagrams

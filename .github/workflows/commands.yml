@@ -9,13 +9,14 @@ on:
       - 'Cargo.lock'
       - '.cargo/config.toml'
       - 'scripts/generate-commands.sh'
+      - 'scripts/commit-generated-docs.sh'
       - '.github/workflows/commands.yml'
       - 'docs/COMMANDS.md'
   workflow_dispatch:
 
 concurrency:
-  group: commands-${{ github.ref }}
-  cancel-in-progress: true
+  group: documentation-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   commands:
@@ -40,12 +41,4 @@ jobs:
       - name: Commit updated reference
         if: ${{ env.ACT != 'true' }}
         run: |
-          git add -- docs/COMMANDS.md
-          if git diff --cached --quiet -- docs/COMMANDS.md; then
-            echo 'Command reference is up to date.'
-            exit 0
-          fi
-          git -c user.name='github-actions[bot]' \
-              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' \
-              commit -m 'docs: update command reference from CLI help'
-          git push origin "HEAD:${GITHUB_REF_NAME}"
+          bash scripts/commit-generated-docs.sh 'docs: update command reference from CLI help' docs/COMMANDS.md
