@@ -31,7 +31,7 @@ pub fn complete(db: &Database, text: &str) -> (usize, Vec<String>) {
         options.extend(
             [
                 "help", "tables", "describe", "open", "backup", "restore", "exit", "SELECT",
-                "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "SHOW", "VACUUM",
+                "INSERT", "UPDATE", "DELETE", "CREATE", "ALTER", "DROP", "SHOW", "VACUUM",
             ]
             .map(str::to_owned),
         );
@@ -93,6 +93,8 @@ pub fn complete(db: &Database, text: &str) -> (usize, Vec<String>) {
                 "REFERENCES",
                 "ADD",
                 "COLUMN",
+                "DROP",
+                "FOREIGN",
                 "MIN",
                 "MAX",
             ]

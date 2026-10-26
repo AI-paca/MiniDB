@@ -194,3 +194,156 @@ fn select_by_primary_key_checks_the_remaining_condition_and_or_keeps_both_keys()
     }
     Ok(())
 }
+
+#[test]
+fn added_foreign_key_applies_immediately_and_survives_reopening() -> Result<()> {
+    let temp = Temp::new()?;
+    let mut db = Database::open(&temp.0)?;
+    db.create(Schema::new(
+        "parents",
+        vec![Column::new("id", DataType::INT)],
+        0,
+    ))?;
+    db.insert("parents", &[Value::Int(7)])?;
+    db.create(schema())?;
+    db.insert("items", &[Value::Int(1), Value::String("before ALTER")])?;
+    db.add_column(
+        "items",
+        Column::new(
+            "parent_id",
+            DataType {
+                nullable: true,
+                ..DataType::INT
+            },
+        )
+        .references("parents", "id"),
+    )?;
+    assert_eq!(
+        db.get("items", 1, |row| Ok(row.at(2)? == Value::Null))?,
+        Some(true)
+    );
+    assert!(db
+        .update("items", &Expr::All, &[("parent_id", Value::Int(999))])
+        .is_err());
+    assert_eq!(
+        db.get("items", 1, |row| Ok(row.at(2)? == Value::Null))?,
+        Some(true)
+    );
+    assert_eq!(
+        db.update("items", &Expr::All, &[("parent_id", Value::Int(7))])?,
+        1
+    );
+    assert!(db.delete("parents", &Expr::All).is_err());
+    assert!(db
+        .update("parents", &Expr::All, &[("id", Value::Int(8))])
+        .is_err());
+    drop(db);
+    let mut db = Database::open(&temp.0)?;
+    assert!(db.delete("parents", &Expr::All).is_err());
+    assert!(db
+        .insert(
+            "items",
+            &[Value::Int(2), Value::String("invalid"), Value::Int(999)]
+        )
+        .is_err());
+    db.update("items", &Expr::All, &[("parent_id", Value::Null)])?;
+    assert_eq!(db.delete("parents", &Expr::All)?, 1);
+    assert_eq!(db.get("parents", 7, |_| Ok(()))?, None);
+    Ok(())
+}
+
+#[test]
+fn dropping_a_middle_column_remaps_fields_primary_key_and_auto_id() -> Result<()> {
+    let temp = Temp::new()?;
+    let mut db = Database::open(&temp.0)?;
+    db.create(Schema::new(
+        "items",
+        vec![
+            Column::new("discard", DataType::STRING),
+            Column::new("id", DataType::INT),
+            Column::new("score", DataType::FLOAT),
+        ],
+        1,
+    ))?;
+    for id in [1, 2, 90] {
+        db.insert(
+            "items",
+            &[Value::String("gone"), Value::Int(id), Value::Float(0.75)],
+        )?;
+    }
+    db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(90)))?;
+    db.drop_column("items", "DISCARD")?;
+    assert_eq!(db.schema("items")?.primary_key, 0);
+    assert_eq!(
+        db.get("items", 1, |row| Ok(row.at(1)? == Value::Float(0.75)))?,
+        Some(true)
+    );
+    assert_eq!(
+        (db.schema("items")?.version, db.schema("items")?.generation),
+        (2, 2)
+    );
+    let before = fs::read(db.data_file("items")?)?;
+    assert!(db.drop_column("items", "id").is_err());
+    assert!(db.drop_column("items", "missing").is_err());
+    assert_eq!(fs::read(db.data_file("items")?)?, before);
+    assert!(!temp.0.join("items_1").exists());
+    drop(db);
+    let mut db = Database::open(&temp.0)?;
+    assert_eq!(db.insert("items", &[Value::Null, Value::Float(0.5)])?, 91);
+    let mut found = Vec::new();
+    db.select(
+        "items",
+        &["id", "score"],
+        &Expr::Compare("id", Compare::Eq, Value::Int(2)),
+        |values| {
+            found.push(values[0].int()?);
+            assert_eq!(values[1], Value::Float(0.75));
+            Ok(())
+        },
+    )?;
+    assert_eq!(found, [2]);
+    Ok(())
+}
+
+#[test]
+fn dropping_a_reference_or_its_column_releases_restrict_and_persists() -> Result<()> {
+    for remove_column in [false, true] {
+        let temp = Temp::new()?;
+        let mut db = Database::open(&temp.0)?;
+        db.create(Schema::new(
+            "parents",
+            vec![Column::new("id", DataType::INT)],
+            0,
+        ))?;
+        db.insert("parents", &[Value::Int(7)])?;
+        db.create(Schema::new(
+            "children",
+            vec![
+                Column::new("id", DataType::INT),
+                Column::new("parent_id", DataType::INT).references("parents", "id"),
+            ],
+            0,
+        ))?;
+        db.insert("children", &[Value::Int(1), Value::Int(7)])?;
+        assert!(db.delete("parents", &Expr::All).is_err());
+        if remove_column {
+            db.drop_column("children", "parent_id")?;
+        } else {
+            db.drop_foreign_key("children", "parent_id")?;
+            assert_eq!(db.get("children", 1, |row| row.at(1)?.int())?, Some(7));
+            assert!(db.drop_foreign_key("children", "parent_id").is_err());
+        }
+        assert_eq!(db.delete("parents", &Expr::All)?, 1);
+        drop(db);
+        let mut db = Database::open(&temp.0)?;
+        assert_eq!(db.schema("children")?.version, 2);
+        if remove_column {
+            assert_eq!(db.schema("children")?.columns.len(), 1);
+            db.insert("children", &[Value::Int(2)])?;
+        } else {
+            assert!(db.schema("children")?.columns[1].references.is_none());
+            db.insert("children", &[Value::Int(2), Value::Int(999)])?;
+        }
+    }
+    Ok(())
+}

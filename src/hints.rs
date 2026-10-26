@@ -13,6 +13,8 @@ impl Context {
         let (action, table) = match command {
             Command::Create(schema) => ("create", Some(schema.name.as_str())),
             Command::AddColumn { table, .. } => ("alter", Some(table.as_str())),
+            Command::DropColumn { table, .. } => ("drop", Some(table.as_str())),
+            Command::DropForeignKey { table, .. } => ("alter", Some(table.as_str())),
             Command::Insert { table, .. } => ("insert", Some(table.as_str())),
             Command::Select { table, .. } => ("select", Some(table.as_str())),
             Command::Update { table, .. } => ("update", Some(table.as_str())),
@@ -67,7 +69,8 @@ impl Context {
         let marker = match action.as_str() {
             "select" | "delete" => Some("from"),
             "insert" => Some("into"),
-            "alter" | "create" | "drop" => Some("table"),
+            "alter" | "create" => Some("table"),
+            "drop" => Some("from"),
             _ => None,
         };
         let table = marker
@@ -121,10 +124,10 @@ impl Context {
             .map(|c| c.name.as_str())
             .unwrap_or(&added);
         let example = if self.drop_column || self.action == "drop" {
-            format!("Удаление столбца (DROP COLUMN) пока не поддерживается.\nДобавить nullable-столбец:\n  ALTER TABLE {table} ADD COLUMN {added} STRING(128) NULL;\nУдалить строку с данными:\n  DELETE FROM {table} WHERE {pk} = 1;\nОчистить значение nullable-поля (после его добавления):\n  UPDATE {table} SET {nullable} = NULL WHERE {pk} = 1;")
+            format!("Удалить столбец и все его значения:\n  ALTER TABLE {table} DROP COLUMN <имя_столбца>;\n  DROP COLUMN <имя_столбца> FROM {table};\nPRIMARY KEY удалить нельзя. Снять только FK, сохранив значения:\n  ALTER TABLE {table} DROP FOREIGN KEY <имя_столбца>;\nДобавить nullable-столбец:\n  ALTER TABLE {table} ADD COLUMN {added} STRING(128) NULL;\nУдалить строку с данными:\n  DELETE FROM {table} WHERE {pk} = 1;\nОчистить значение nullable-поля (после его добавления):\n  UPDATE {table} SET {nullable} = NULL WHERE {pk} = 1;")
         } else {
             match self.action.as_str() {
-            "alter" => format!("Добавить столбец в конец таблицы:\n  ALTER TABLE {table} ADD COLUMN {added} STRING(128) NULL;\nБез заданного типа:\n  ALTER TABLE {table} ADD COLUMN {added};\nТип останется NULL до первого ненулевого INSERT/UPDATE. Старые строки получают NULL. DROP COLUMN пока не поддерживается."),
+            "alter" => format!("Добавить столбец в конец таблицы:\n  ALTER TABLE {table} ADD COLUMN {added} STRING(128) NULL;\nБез заданного типа:\n  ALTER TABLE {table} ADD COLUMN {added};\nТип останется NULL до первого ненулевого INSERT/UPDATE. Старые строки получают NULL. Удаление: ALTER TABLE {table} DROP COLUMN <имя_столбца>;\nСнять REFERENCES: ALTER TABLE {table} DROP FOREIGN KEY <имя_столбца>;"),
             "create" => "Создать таблицу:\n  CREATE TABLE notes (id INT PRIMARY KEY, name STRING(64) NOT NULL, score FLOAT);".into(),
             "insert" => {
                 let (columns, values) = schema.map(insert_fields).unwrap_or_else(|| (vec!["name".into()], vec!["'example'".into()]));
@@ -136,7 +139,7 @@ impl Context {
                 let (name, value) = column.map(|c| (c.name.as_str(), literal(c.data_type.kind))).unwrap_or((pk, "1".into()));
                 format!("Изменить значения в строке:\n  UPDATE {table} SET {name} = {value} WHERE {pk} = 1;")
             }
-            "delete" => format!("Удалить одну строку с данными:\n  DELETE FROM {table} WHERE {pk} = 1;\nУдалить ВСЕ строки, сохранив таблицу и столбцы:\n  DELETE FROM {table};\nDELETE удаляет строки; удаление столбца — отдельная операция DROP COLUMN, пока не поддерживается."),
+            "delete" => format!("Удалить одну строку с данными:\n  DELETE FROM {table} WHERE {pk} = 1;\nУдалить ВСЕ строки, сохранив таблицу и столбцы:\n  DELETE FROM {table};\nDELETE удаляет строки; удалить столбец:\n  ALTER TABLE {table} DROP COLUMN <имя_столбца>;"),
             "describe" => format!("Посмотреть столбцы и ограничения:\n  DESCRIBE {table};"),
             "vacuum" => format!("Убрать удалённые слоты из файла данных:\n  VACUUM {table};\nСтруктура и VERSION сохраняются; GENERATION растёт при уплотнении."),
             "show" => "Показать таблицы:\n  SHOW TABLES;\nПоказать каталог базы:\n  SHOW DATABASE;".into(),

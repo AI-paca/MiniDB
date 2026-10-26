@@ -208,6 +208,19 @@ impl Database {
         self.table_mut(table)?.add_column(column)
     }
 
+    pub fn drop_column(&mut self, table: &str, column: &str) -> Result<()> {
+        let schema = self.schema(table)?.with_dropped_column(column)?;
+        self.check_schema(&schema)?;
+        // Целью FK может быть только PK; его удаление запрещено выше.
+        self.table_mut(table)?.drop_column(column)
+    }
+
+    pub fn drop_foreign_key(&mut self, table: &str, column: &str) -> Result<()> {
+        let schema = self.schema(table)?.with_dropped_foreign_key(column)?;
+        self.check_schema(&schema)?;
+        self.table_mut(table)?.drop_foreign_key(column)
+    }
+
     // Проверка наличия родительских записей для внешних ключей
     fn check_values(
         &self,

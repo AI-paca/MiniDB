@@ -638,17 +638,19 @@ fn insert_hint_uses_required_columns_and_is_an_executable_example() {
 }
 
 #[test]
-fn drop_column_reports_unsupported_and_delete_examples_distinguish_rows_from_columns() {
+fn drop_column_rewrites_data_and_typos_show_the_correct_syntax() {
     let temp = Temp::new();
     success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL);\nINSERT INTO notes VALUES (1, 'first');\nINSERT INTO notes VALUES (2, 'second');\nexit;\n"));
     let before = fs::read(temp.0.join("db/notes_1")).unwrap();
-    let output =
-        temp.run("ALTER TABLE notes DROP COLUMN name;\nDELETE COLUMN name FROM notes;\nexit;\n");
+    let output = temp.run("DRop colum name from notes;\nDELETE COLUMN name FROM notes;\nexit;\n");
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(!output.status.success());
-    assert!(error.contains("DROP COLUMN) пока не поддерживается"));
+    assert!(error.contains("DROP COLUMN <имя_столбца> FROM notes;"));
     assert!(error.contains("DELETE FROM notes WHERE id = 1;"));
     assert_eq!(fs::read(temp.0.join("db/notes_1")).unwrap(), before);
+    success(&temp.run("DRop CoLuMn name fRoM notes;\nexit;\n"));
+    assert!(!temp.0.join("db/notes_1").exists());
+    assert!(temp.0.join("db/notes_2").exists());
     let output = temp.run("DELETE notes;\nexit;\n");
     let error = String::from_utf8(output.stderr).unwrap();
     assert!(error.contains("Удалить ВСЕ строки, сохранив таблицу и столбцы:"));

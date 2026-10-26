@@ -97,6 +97,46 @@ impl Schema {
         Ok(next)
     }
 
+    /// Явная несовместимая операция; не является append-only эволюцией.
+    pub fn with_dropped_column(&self, name: &str) -> Result<Self> {
+        let index = self.column(name)?;
+        if index == self.primary_key {
+            return Err("Нельзя удалить PRIMARY KEY таблицы".into());
+        }
+        let mut next = self.next_revision()?;
+        next.columns.remove(index);
+        if index < next.primary_key {
+            next.primary_key -= 1;
+        }
+        next.check()?;
+        Ok(next)
+    }
+
+    /// Убирает только REFERENCES: значения, тип и nullable сохраняются.
+    pub fn with_dropped_foreign_key(&self, name: &str) -> Result<Self> {
+        let index = self.column(name)?;
+        if self.columns[index].references.is_none() {
+            return Err(format!("У столбца {name} нет FOREIGN KEY").into());
+        }
+        let mut next = self.next_revision()?;
+        next.columns[index].references = None;
+        next.check()?;
+        Ok(next)
+    }
+
+    fn next_revision(&self) -> Result<Self> {
+        let mut next = self.clone();
+        next.version = next
+            .version
+            .checked_add(1)
+            .ok_or("Исчерпаны версии схемы")?;
+        next.generation = next
+            .generation
+            .checked_add(1)
+            .ok_or("Исчерпаны поколения")?;
+        Ok(next)
+    }
+
     /// Только поля, добавленные после v1, могут ожидать первого ненулевого значения.
     pub(crate) fn infer_types(&self, values: &[(usize, crate::Value<'_>)]) -> Result<Option<Self>> {
         let mut next = None;

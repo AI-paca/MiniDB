@@ -27,6 +27,9 @@ const HELP: &str = "MiniDB — команды вводятся здесь, по�
 
   CREATE TABLE notes (id INT PRIMARY KEY, name STRING NOT NULL, score FLOAT);
   ALTER TABLE notes ADD COLUMN attempts INT NULL;
+  ALTER TABLE notes DROP COLUMN attempts;
+  DROP COLUMN name FROM notes;  альтернативная запись удаления столбца
+  ALTER TABLE experiments DROP FOREIGN KEY dataset_id;  снять REFERENCES
   VACUUM notes;                убрать удалённые слоты из файла данных
   ALTER TABLE notes ADD COLUMN note;  тип NULL до первого ненулевого значения
   INSERT INTO notes (name, score) VALUES ('Alice', 0.9);
@@ -40,7 +43,9 @@ const HELP: &str = "MiniDB — команды вводятся здесь, по�
 Добавление столбца: ALTER TABLE notes ADD COLUMN comment;
 Без типа новый столбец имеет тип NULL; первый INSERT/UPDATE с ненулевым
 значением фиксирует INT, FLOAT или STRING. Явный тип тоже можно задать.
-Удаление столбца (DROP COLUMN) пока не поддерживается.
+Удаление столбца: ALTER TABLE notes DROP COLUMN comment;
+Снятие FK: ALTER TABLE experiments DROP FOREIGN KEY dataset_id;
+DROP COLUMN удаляет значения столбца, PRIMARY KEY удалить нельзя.
 DELETE удаляет строки с данными. UPDATE notes SET comment = NULL WHERE id = 2
 очищает значение nullable-поля, сохраняя столбец.
 После ошибки сразу появляется пример команды; отдельно вызывать help не нужно.
@@ -319,6 +324,14 @@ fn execute(session: &mut Option<Database>, command: Command) -> Result<bool> {
         Command::Restore(_, _) => unreachable!("RESTORE обрабатывается перед заимствованием базы"),
         Command::Vacuum(table) => {
             println!("Освобождено слотов: {}", db.vacuum(&table)?);
+        }
+        Command::DropColumn { table, column } => {
+            db.drop_column(&table, &column)?;
+            println!("Удалён столбец {table}.{column}");
+        }
+        Command::DropForeignKey { table, column } => {
+            db.drop_foreign_key(&table, &column)?;
+            println!("Снят FOREIGN KEY {table}.{column}; значения сохранены");
         }
         Command::Create(schema) => {
             let name = schema.name.clone();

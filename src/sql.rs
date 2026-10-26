@@ -106,6 +106,14 @@ pub enum Command {
         table: String,
         column: Column,
     },
+    DropColumn {
+        table: String,
+        column: String,
+    },
+    DropForeignKey {
+        table: String,
+        column: String,
+    },
     Insert {
         table: String,
         columns: Vec<String>,
@@ -417,7 +425,18 @@ impl Parser {
                 self.need("TABLE")?;
                 let table = self.name()?;
                 if self.eat("DROP") {
-                    return Err("Удаление столбца (DROP COLUMN) пока не поддерживается; DELETE удаляет строки, а не столбцы".into());
+                    if self.eat("FOREIGN") {
+                        self.need("KEY")?;
+                        return Ok(Command::DropForeignKey {
+                            table,
+                            column: self.name()?,
+                        });
+                    }
+                    self.need("COLUMN")?;
+                    return Ok(Command::DropColumn {
+                        table,
+                        column: self.name()?,
+                    });
                 }
                 self.need("ADD")?;
                 self.eat("COLUMN");
@@ -429,6 +448,15 @@ impl Parser {
                     return Err("ALTER ADD COLUMN не добавляет второй PRIMARY KEY".into());
                 }
                 Command::AddColumn { table, column }
+            }
+            "DROP" => {
+                self.need("COLUMN")?;
+                let column = self.name()?;
+                self.need("FROM")?;
+                Command::DropColumn {
+                    table: self.name()?,
+                    column,
+                }
             }
             "INSERT" => {
                 self.need("INTO")?;

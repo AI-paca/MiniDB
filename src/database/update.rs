@@ -88,7 +88,7 @@ impl UpdatePlan {
     ) -> Result<()> {
         let old_id = row.at(row.schema.primary_key)?.int()?;
         let id = vals[row.schema.primary_key].int()?;
-        // Логический no-op одинаков для старого и текущего физического Layout.
+        // Сравнение значений исключает перезапись строки без изменений.
         if vals
             .iter()
             .enumerate()

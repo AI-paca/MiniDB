@@ -326,18 +326,26 @@ impl Table {
         Ok(dead)
     }
 
+    pub fn drop_column(&mut self, name: &str) -> Result<()> {
+        self.rewrite(self.schema.with_dropped_column(name)?)
+    }
+
+    pub fn drop_foreign_key(&mut self, name: &str) -> Result<()> {
+        self.rewrite(self.schema.with_dropped_foreign_key(name)?)
+    }
+
     fn encode_rewritten<'row>(
         row: Row<'row>,
         layout: &Layout,
         schema: &Schema,
+        source_columns: &[Option<usize>],
         mut values: Vec<Value<'row>>,
         out: &mut [u8],
     ) -> Result<Vec<Value<'static>>> {
-        for (i, value) in values.iter_mut().enumerate() {
-            *value = if i < row.schema.columns.len() {
-                row.at(i)?
-            } else {
-                Value::Null
+        for (value, source) in values.iter_mut().zip(source_columns) {
+            *value = match source {
+                Some(index) => row.at(*index)?,
+                None => Value::Null,
             };
         }
         record::encode_validated_layout(layout, schema, &values, FLAG_LIVE, out)?;
@@ -362,6 +370,12 @@ impl Table {
         let mut target = TextFile::create(&path, &schema)?;
         let mut out = vec![0; layout.row_size];
         let new_columns = schema.columns.len();
+        // Имена связывают старые и новые поля: DROP сдвигает номера колонок.
+        let source_columns: Vec<_> = schema
+            .columns
+            .iter()
+            .map(|column| self.schema.column(&column.name).ok())
+            .collect();
         let mut written = 0;
         let result = (|| -> Result<()> {
             self.file.seek(SeekFrom::Start(0))?;
@@ -381,6 +395,7 @@ impl Table {
                     row,
                     &layout,
                     &schema,
+                    &source_columns,
                     std::mem::take(&mut values),
                     &mut out,
                 )?;

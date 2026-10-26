@@ -93,7 +93,7 @@ pub fn check_schema_once(
 }
 
 /// Постоянная по числу колонок проверка оболочки Row; поля проверяет Row::at.
-/// Layout сегмента заранее проверяется при Table::open/create/add_column.
+/// Layout таблицы заранее проверяется при Table::open/create/add_column.
 pub fn check_record(row: Row<'_>) -> Result<()> {
     if row.bytes.len() != row.layout.row_size
         || row.layout.cols.is_empty()
