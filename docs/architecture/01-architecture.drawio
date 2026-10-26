@@ -68,7 +68,7 @@
         <mxCell id="other" value="models_schema + models_1&#10;experiments_schema + experiments_1&#10;.lock и .history — служебные" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="820" y="915" width="360" height="115" as="geometry" />
         </mxCell>
-        <mxCell id="gen" value="codegen.rs · отдельно&#10;Schema → tables.rs&#10;struct + адаптеры чтения/записи&#10;Компилирует потребитель&#10;См. лист 7" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
+        <mxCell id="gen" value="codegen.rs · отдельно&#10;Schema → tables.rs&#10;struct + адаптеры чтения/записи&#10;Компилирует потребитель&#10;См. лист 3" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="1250" y="870" width="420" height="180" as="geometry" />
         </mxCell>
         <mxCell id="edge-1" value="строка" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="cli" target="parser">

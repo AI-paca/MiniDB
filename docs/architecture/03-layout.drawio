@@ -1,71 +1,116 @@
 <?xml version='1.0' encoding='utf-8'?>
-<mxfile host="app.diagrams.net" type="device">
-  <diagram id="03-layout.drawio" name="3. Schema → Layout; текст ↔ запись; запись → Value">
-    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1120" background="#ffffff">
+<mxfile host="65bd71144e">
+  <diagram id="03-layout.drawio" name="3. Описатель записи и цена изменения колонок">
+    <mxGraphModel dx="1216" dy="876" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1700" pageHeight="1840" background="#ffffff" math="0" shadow="0">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
-        <mxCell id="title" value="3. Schema → Layout; текст ↔ запись; запись → Value" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=25;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fontStyle=1;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
-          <mxGeometry x="30" y="20" width="1540" height="40" as="geometry" />
+        <mxCell id="title" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=25;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fontStyle=1;fillColor=none;strokeColor=none;spacing=0;" value="3. Описатель записи и цена изменения колонок" vertex="1">
+          <mxGeometry height="40" width="1640" x="30" y="20" as="geometry" />
         </mxCell>
-        <mxCell id="subtitle" value="Layout — вычисленное описание байтов в RAM. TextFile — кодек/сериализатор. Генератор Rust показан отдельно на листе 7." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" vertex="1" parent="1">
-          <mxGeometry x="30" y="65" width="1540" height="45" as="geometry" />
+        <mxCell id="subtitle" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;fillColor=none;strokeColor=none;spacing=0;" value="Schema и Layout — данные-описатели. Исполняется машинный код обычных Rust-функций; запись в RAM — бинарные байты по Layout." vertex="1">
+          <mxGeometry height="45" width="1640" x="30" y="65" as="geometry" />
         </mxCell>
-        <mxCell id="schema" value="Schema: 3 колонки&#10;id INT PRIMARY KEY&#10;name STRING(8) NOT NULL&#10;score FLOAT NULL" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="30" y="140" width="420" height="180" as="geometry" />
+        <mxCell id="schema" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" value="ЛОГИЧЕСКИЙ ОПИСАТЕЛЬ · Table.schema&#10;Vec&lt;Column&gt;: имена, типы и REFERENCES.&#10;Пример: id INT, name STRING(8), score FLOAT NULL.&#10;prepare: Schema::column(&quot;name&quot;) ищет i=1 один раз.&#10;Row::get(name) выполняет этот поиск при каждом вызове." vertex="1">
+          <mxGeometry height="190" width="490" x="30" y="140" as="geometry" />
         </mxCell>
-        <mxCell id="calc" value="Layout::from_schema&#10;null_bytes = ceil(3 / 8) = 1&#10;header = flag(1) + null_bytes = 2&#10;INT/FLOAT: 8; STRING(n): 2 + n" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="540" y="140" width="510" height="180" as="geometry" />
+        <mxCell id="layout" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" value="ФИЗИЧЕСКИЙ ОПИСАТЕЛЬ · Table.layout&#10;Layout { cols, row_size, null_bytes, header }&#10;ColLayout { offset, width, kind }&#10;null_bytes = ceil(3/8) = 1; header = 2.&#10;Offsets: id=2, name=10, score=20; row_size=28." vertex="1">
+          <mxGeometry height="190" width="490" x="605" y="140" as="geometry" />
         </mxCell>
-        <mxCell id="offsets" value="Layout.cols&#10;id: offset 2, width 8&#10;name: offset 10, width 10&#10;score: offset 20, width 8&#10;row_size = 28 байт" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1140" y="140" width="430" height="180" as="geometry" />
+        <mxCell id="row" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" value="Row { bytes, &amp;schema, &amp;layout }&#10;Заимствует слот и общие описатели.&#10;at(1): cols[1] → offset 10 → len 4 → «iris».&#10;at(2): установлен NULL-бит → Value::Null.&#10;Чтение по номеру не ищет имя по списку." vertex="1">
+          <mxGeometry height="190" width="490" x="1180" y="140" as="geometry" />
         </mxCell>
-        <mxCell id="disk" value="ДИСК · текст переменной длины&#10;LIVE\t1\t&quot;iris&quot;\tNULL&#10;LIVE\t2\t&quot;mnist&quot;\t0.91&#10;Здесь \t обозначает настоящий Tab.&#10;Одна строка данных — слот; длина текста меняется." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="30" y="410" width="590" height="190" as="geometry" />
-        </mxCell>
-        <mxCell id="codec" value="TextFile::reload / persist&#10;Разбор литералов по Schema&#10;record::encode / Row::at&#10;Сохранение: текстовый снимок&#10;В файле нет бинарных offsets" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="730" y="410" width="420" height="190" as="geometry" />
-        </mxCell>
-        <mxCell id="address" value="Table.index&#10;PK 1 → RAM offset 0&#10;PK 2 → RAM offset 28&#10;Это адрес слота в памяти,&#10;не позиция в UTF-8 файле." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1240" y="410" width="330" height="190" as="geometry" />
-        </mxCell>
-        <mxCell id="slot" value="RAM · первый слот (28 байт)" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
-          <mxGeometry x="30" y="700" width="1540" height="170" as="geometry" />
-        </mxCell>
-        <mxCell id="flag" value="flag&#10;[0] · 1 байт" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="60" y="755" width="160" height="95" as="geometry" />
-        </mxCell>
-        <mxCell id="bitmap" value="NULL bitmap&#10;[1] · 1 байт&#10;бит 2 = 1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="220" y="755" width="210" height="95" as="geometry" />
-        </mxCell>
-        <mxCell id="id" value="id = 1&#10;[2..10) · i64 LE" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="430" y="755" width="300" height="95" as="geometry" />
-        </mxCell>
-        <mxCell id="name" value="name&#10;[10..12) len = 4&#10;[12..20) UTF-8 + нули" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="730" y="755" width="430" height="95" as="geometry" />
-        </mxCell>
-        <mxCell id="score" value="score = NULL&#10;[20..28) · 8 байт&#10;пустоту задаёт bitmap" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1160" y="755" width="380" height="95" as="geometry" />
-        </mxCell>
-        <mxCell id="row" value="Row { bytes, schema, layout }&#10;Row::at(1): bitmap → offset 10 → длина 4 → &amp;str «iris»&#10;Row::at(2): NULL-бит установлен → Value::Null&#10;Общая раскладка для всех строк; поля не хранятся как Vec&lt;Vec&lt;Value&gt;&gt;." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="30" y="930" width="900" height="145" as="geometry" />
-        </mxCell>
-        <mxCell id="rebuild" value="После ADD COLUMN&#10;Новый Layout → перекодировать все LIVE&#10;Добавить NULL → перестроить PK offsets&#10;Старого префиксного Layout в Table нет." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="1010" y="930" width="560" height="145" as="geometry" />
-        </mxCell>
-        <mxCell id="edge-1" value="проверить" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#9170af;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="schema" target="calc">
+        <mxCell id="edge-1" edge="1" parent="1" source="schema" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#9170af;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="layout" value="посчитать">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-2" value="посчитать" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#9170af;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="calc" target="offsets">
+        <mxCell id="edge-2" edge="1" parent="1" source="layout" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#9170af;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="row" value="читать поля">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-3" value="decode →" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" edge="1" parent="1" source="disk" target="codec">
+        <mxCell id="slot" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" value="ПЕРВЫЙ СЛОТ В RAM · 28 байт" vertex="1">
+          <mxGeometry height="155" width="1640" x="30" y="380" as="geometry" />
+        </mxCell>
+        <mxCell id="flag" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" value="flag&#10;[0] · 1 байт" vertex="1">
+          <mxGeometry height="80" width="150" x="60" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="bitmap" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" value="NULL bitmap&#10;[1] · 1 байт&#10;бит 2 = 1" vertex="1">
+          <mxGeometry height="80" width="220" x="210" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="id" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" value="id = 1&#10;[2..10) · i64 LE" vertex="1">
+          <mxGeometry height="80" width="300" x="430" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="name" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" value="name&#10;[10..12) len = 4&#10;[12..20) UTF-8 + нули" vertex="1">
+          <mxGeometry height="80" width="440" x="730" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="score" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" value="score = NULL&#10;[20..28) · 8 байт&#10;пустоту задаёт bitmap" vertex="1">
+          <mxGeometry height="80" width="470" x="1170" y="435" as="geometry" />
+        </mxCell>
+        <mxCell id="disk" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" value="ДИСК · UTF-8, длина строки переменная&#10;LIVE\t1\t&quot;iris&quot;\tNULL&#10;Здесь \t — настоящий Tab; текст читается в IDE.&#10;В файле нет фиксированных RAM offsets." vertex="1">
+          <mxGeometry height="110" width="490" x="30" y="890.0" as="geometry" />
+        </mxCell>
+        <mxCell id="codec" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" value="TextFile · кодек и Cursor&lt;Vec&lt;u8&gt;&gt;&#10;reload: текст → record::encode → слоты.&#10;persist: Row::at → текстовый снимок.&#10;Собственные копии Schema/Layout для кодека." vertex="1">
+          <mxGeometry height="110" width="490" x="605" y="890.0" as="geometry" />
+        </mxCell>
+        <mxCell id="address" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;" value="Table.index: PK → offset В RAM&#10;PK 1 → 0, PK 2 → 28, …&#10;Это не байтовый адрес в UTF-8 файле.&#10;Все данные таблицы загружены в память." vertex="1">
+          <mxGeometry height="110" width="490" x="1180" y="890.0" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-3" edge="1" parent="1" source="disk" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="codec" value="разобрать / сохранить">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-4" value="фиксированные слоты" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.35;entryY=0;" edge="1" parent="1" source="codec" target="slot">
+        <mxCell id="edge-4" edge="1" parent="1" source="codec" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="address" value="слоты для Table">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
-        <mxCell id="edge-5" value="get(id)" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#bd9a45;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.85;entryY=0;" edge="1" parent="1" source="address" target="slot">
+        <mxCell id="mutation" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" value="ADD / DROP COLUMN · полная перепись одной таблицы; ядро уже скомпилировано, rustc не запускается" vertex="1">
+          <mxGeometry height="480" width="1640" x="30" y="1060.0" as="geometry" />
+        </mxCell>
+        <mxCell id="newdesc" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" value="1 · Новые Schema и Layout&#10;VERSION + 1, GENERATION + 1&#10;ADD: дописать nullable-поле.&#10;DROP: убрать поле; PK удалить нельзя." vertex="1">
+          <mxGeometry height="130" width="430" x="60" y="1135.0" as="geometry" />
+        </mxCell>
+        <mxCell id="rewrite" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" value="2 · Пройти старые слоты&#10;Взять только LIVE. Поля связать по именам.&#10;Старый Row → значения → новый encode.&#10;ADD: заполнить NULL; DROP: пропустить поле." vertex="1">
+          <mxGeometry height="130" width="490" x="605" y="1135.0" as="geometry" />
+        </mxCell>
+        <mxCell id="newram" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" value="3 · Собрать второй TextFile в RAM&#10;Новые слоты имеют R_new байт.&#10;Старые слоты ещё тоже в памяти.&#10;DEAD/FREE не переносить." vertex="1">
+          <mxGeometry height="130" width="430" x="1210" y="1135.0" as="geometry" />
+        </mxCell>
+        <mxCell id="swap" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" value="6 · Переключить Table в процессе&#10;Заменить Schema / Layout / TextFile.&#10;PK-значения те же, offsets перестроить.&#10;Отпустить старый RAM; удалить старый файл." vertex="1">
+          <mxGeometry height="135" width="430" x="60" y="1365.0" as="geometry" />
+        </mxCell>
+        <mxCell id="publish" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff9e9;strokeColor=#bd9a45;strokeWidth=1.5;fontStyle=1;" value="5 · Единственная точка переключения&#10;schema.tmp → sync → rename → sync каталога.&#10;GENERATION теперь указывает на новый файл.&#10;Новые команды видят новые колонки и FK." vertex="1">
+          <mxGeometry height="135" width="490" x="605" y="1365.0" as="geometry" />
+        </mxCell>
+        <mxCell id="sync" parent="1" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" value="4 · Сохранить новое поколение&#10;Новый TextFile → UTF-8 → sync_all&#10;Два файла на диске до переключения.&#10;До него ошибка оставляет старую таблицу." vertex="1">
+          <mxGeometry height="135" width="430" x="1210" y="1365.0" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-5" edge="1" parent="1" source="newdesc" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="rewrite" value="новый формат">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-6" edge="1" parent="1" source="rewrite" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=1;exitY=0.5;entryX=0;entryY=0.5;" target="newram" value="новые слоты">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-7" edge="1" parent="1" source="newram" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" target="sync" value="сериализация">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-8" edge="1" parent="1" source="sync" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="publish" value="готово">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="edge-9" edge="1" parent="1" source="publish" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0;exitY=0.5;entryX=1;entryY=0.5;" target="swap" value="опубликовано">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="compiled-code-panel" value="ИСПОЛНЯЕМЫЙ КОД · cargo заранее компилирует эти функции вместе с движком" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;verticalAlign=top;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="30" y="590" width="1640" height="240" as="geometry" />
+        </mxCell>
+        <mxCell id="read-code" value="ЧТЕНИЕ · record.rs: Row::at(i)&#10;col = layout.cols[i] — прямой доступ.&#10;Проверить NULL-бит; взять bytes[offset..end].&#10;match col.kind: INT/FLOAT → from_le_bytes;&#10;STRING → u16 длины + UTF-8. Вернуть Value." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="60" y="650" width="490" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="write-code" value="ЗАПИСЬ · encode_validated_layout&#10;Цикл по values; поле = layout.cols[i].&#10;INT/FLOAT → to_le_bytes в bytes[offset..end].&#10;STRING → длина u16, затем UTF-8.&#10;NULL → поставить бит; заполнить flag записи." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="605" y="650" width="490" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="machine-code" value="ЧТО ЗАПУСКАЕТСЯ&#10;Row::at / encode — машинный код minidb.&#10;Layout передаёт offset, width и Kind.&#10;Он не содержит исполняемую программу.&#10;Ни JIT, ни rustc во время CRUD не нужны." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;fillColor=#f0f8f3;strokeColor=#5d9073;strokeWidth=1.5;fillColor=#fff9e9;strokeColor=#bd9a45;" vertex="1" parent="1">
+          <mxGeometry x="1180" y="650" width="460" height="145" as="geometry" />
+        </mxCell>
+        <mxCell id="read-code-edge" value="байты → Value" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.17;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="slot" target="read-code">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="write-code-edge" value="Value → байты" style="edgeStyle=orthogonalEdgeStyle;endArrow=block;fontSize=14;labelBackgroundColor=#ffffff;exitX=0.5;exitY=0;entryX=0.5;entryY=1;" edge="1" parent="1" source="write-code" target="slot">
           <mxGeometry relative="1" as="geometry" />
         </mxCell>
       </root>

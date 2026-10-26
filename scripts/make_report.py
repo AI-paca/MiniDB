@@ -21,6 +21,7 @@ def text(value, x=42, size=10.5, bold=False):
 
 def paragraph(value, size=10.5):
     global y
+    leading = 14 if size <= 10 else 15
     ctx.select_font_face('DejaVu Sans', cairo.FONT_SLANT_NORMAL, cairo.FONT_WEIGHT_NORMAL)
     ctx.set_font_size(size)
     line = ''
@@ -28,15 +29,15 @@ def paragraph(value, size=10.5):
         candidate = f'{line} {word}'.strip()
         if ctx.text_extents(candidate).width > WIDTH - 84:
             text(line, size=size)
-            y += 15
+            y += leading
             line = word
         else:
             line = candidate
     if line:
         text(line, size=size)
-        y += 15
+        y += leading
     y += 5
-    assert y < 790, 'Текст вышел за границу страницы'
+    assert y < 790, f'Текст вышел за границу страницы: y={y:.1f}'
 
 
 def title(value):
@@ -63,7 +64,7 @@ page(1, 'Схема, устройство и формат хранения')
 paragraph('Мини-СУБД реализована на Rust без внешних Rust-зависимостей и готовых СУБД. JSON не используется как основное хранилище. SQL-консоль создаёт, ищет, изменяет и удаляет строки; данные сохраняются после перезапуска.')
 title('Три связанные таблицы')
 image = cairo.ImageSurface.create_from_png(str(ROOT / 'docs/schema.png'))
-scale = min((WIDTH - 84) / image.get_width(), 210 / image.get_height())
+scale = min((WIDTH - 84) / image.get_width(), 180 / image.get_height())
 ctx.save()
 ctx.translate((WIDTH - image.get_width() * scale) / 2, y)
 ctx.scale(scale, scale)
@@ -74,13 +75,13 @@ y += image.get_height() * scale + 17
 paragraph('datasets(id, name, task, size); models(id, name, version); experiments(id, dataset_id, model_id, accuracy, status). PK — id. FK experiments ссылаются на PK datasets/models. Проверяются уникальность, авто-ID, наличие родителя и RESTRICT.', size=10)
 title('Собственные файлы')
 paragraph('На таблицу: имя_schema — CREATE TABLE, VERSION, GENERATION и счётчик auto-ID; имя_N — единственные текущие данные, N берётся из GENERATION. UTF-8: заголовок, состояния LIVE/DEAD/FREE, значения через Tab. Строки заключены в кавычки, специальные символы экранированы. INT=i64, FLOAT=f64, STRING(n)=UTF-8 до n байт.')
-paragraph('ALTER и VACUUM собирают живые строки в новом поколении, синхронизируют данные, атомарно заменяют схему, синхронизируют каталог и удаляют прежний файл. При открытии убираются осиротевшие поколения. ALTER увеличивает VERSION; VACUUM сохраняет структуру и VERSION. Максимум auto-ID сохраняется при удалении мёртвых слотов.')
+paragraph('ALTER (ADD/DROP COLUMN, снятие FK) и VACUUM собирают живые строки в новом поколении: sync данных → атомарная замена схемы → sync каталога → удаление прежнего файла. Открытие убирает осиротевшие поколения. ALTER увеличивает VERSION и GENERATION; VACUUM — только GENERATION, если есть мёртвые слоты. Максимум auto-ID сохраняется.')
 title('Архитектура')
-paragraph('sql.rs → Database (PK/FK, запросы, backup) → Table (один Layout, индекс id → offset, свободные слоты) → TextFile. UTF-8 декодируется в слоты в RAM; обычный CRUD сохраняет атомарный снимок того же файла. SELECT по равенству PK использует индекс; остальные условия просматривают живые строки. Drawio находятся в docs/architecture, PNG — в diagrams.', size=10)
+paragraph('sql.rs → Database (PK/FK, запросы, backup) → Table → TextFile. Описатель разделён на Schema (поля и ограничения) и Layout (NULL-bitmap, ширины, смещения в RAM). Row заимствует оба описателя и байты слота. UTF-8 декодируется в RAM; обычный CRUD сохраняет атомарный снимок текущего файла. Индекс PK → offset адресует слот в RAM, не байт текстового файла.', size=10)
+paragraph('ADD/DROP перекодируют все живые строки одной таблицы: оставшиеся поля сопоставляются по имени, новые получают NULL. Ядро не пересобирается. Время зависит от старых слотов, новых байтов и числа колонок; одновременно в RAM лежат старый и новый буферы. Например, 100 тыс. строк по 100 байт + STRING(128): около 33 МБ двух буферов, без индекса. На диске до переключения тоже два поколения.', size=10)
 ctx.show_page()
 
 page(2, 'Сценарий защиты, проверки и результат индекса')
-title('Воспроизведение')
 paragraph('Локально: ./sample.sh scratch/defense, затем ./run.sh scratch/defense. Docker: docker compose build; docker compose run --rm minidb sh /usr/local/bin/sample.sh /data/defense; docker compose run --rm minidb minidb /data/defense. Пример содержит 5 datasets, 5 models и 20 experiments; первые три experiments — из ТЗ.', size=10)
 title('Операции и ожидаемый результат')
 for command in [
@@ -92,17 +93,19 @@ for command in [
 ]:
     text(command, size=8.3)
     y += 16
-paragraph('INSERT выдаёт авто-ID; SELECT выбирает поля с условием; UPDATE и DELETE меняют по одной строке. Последний запрос отклоняется из-за FK. После EXIT и повторного открытия остаются 20 experiments. Также поддерживаются шесть сравнений, AND/OR, NOT, IS NULL, INNER JOIN, ALTER, VACUUM и backup/restore.', size=10)
+paragraph('INSERT выдаёт авто-ID; UPDATE и DELETE меняют по одной строке. Последний запрос отклоняется из-за FK. После EXIT и повторного открытия остаются 20 experiments. Поддерживаются шесть сравнений, AND/OR, NOT, IS NULL, INNER JOIN и backup/restore.', size=10)
+paragraph('ADD nullable-колонки с REFERENCES сразу включает FK-проверку для следующих INSERT/UPDATE; старые строки получают NULL. DROP FOREIGN KEY сохраняет значения и снимает связь; DROP COLUMN удаляет поле и его FK. Удалять PK запрещено. Ссылки блокируют DELETE/смену PK родителя (RESTRICT). Перезапуск после ALTER не нужен; внешние правки файлов требуют повторного открытия.', size=10)
 title('Сравнение поиска с индексом и без')
 with (ROOT / 'docs/benchmark.csv').open() as file:
     bench = next(csv.DictReader(file))
 paragraph(f"Release: {bench['rows']} строк, {bench['queries']} одинаковых запросов. Наполнение, открытие и sync вне таймера. Данные уже в RAM; это не измерение дискового I/O. Контрольные суммы всех трёх способов совпали: {bench['checksum']}.", size=10)
+paragraph('Просмотр — O(числа слотов); HashMap по равенству INT PK — в среднем O(1), затем проверяется весь WHERE. Диапазоны и другие поля требуют просмотра. Индекс строится при открытии и обновляется при CRUD; после переписи перестраивается.', size=10)
 for label, value in [('Полный просмотр', bench['scan_ms']), ('Индекс get(id)', bench['index_ms']), ('SELECT WHERE id = …', bench['select_ms'])]:
     text(label, bold=True)
     text(value + ' мс', x=340)
     y += 21
 paragraph('Повторить: cargo run --locked --offline --release --example bench -- scratch/bench 5000. Это один локальный замер; результат зависит от машины.', size=9)
 title('Проверки и ограничения')
-paragraph('Автотесты проверяют CRUD, перезапуск, типы, PK/FK, JOIN, фильтры, восстановление поколений и генератор структур. scripts/check-docker.sh повторяет все команды и сценарий защиты в отдельном Docker-томе. Два workflow через act проверяют экспорт drawio в README и генерацию справки из --help.', size=10)
-paragraph('Docker — инженерное расширение. SQL-парсер, автотесты и генератор — бонусы поверх базовой функциональности. Генератор читает *_schema, потребитель сам компилирует Rust-структуры. WAL и многооператорных транзакций нет; UPDATE ограничен 16 МиБ. Восстановление поколений относится к полной перезаписи. Физическое отключение питания не проверялось.', size=10)
+paragraph('101 автотест: CRUD, перезапуск, типы, PK/FK, JOIN, фильтры, поколения и генератор. scripts/check-docker.sh проверяет все команды в отдельном Docker-томе. Два workflow через act экспортируют drawio в README и справку --help в docs/COMMANDS.md.', size=10)
+paragraph('Генератор читает *_schema; Rust-структуры компилирует потребитель. WAL и транзакций на несколько команд нет; пакет UPDATE ограничен 16 МиБ. Полного аудита FK сохранённых строк при открытии нет. Восстановление поколений относится к полной переписи; физическое отключение питания не проверялось.', size=10)
 surface.finish()
