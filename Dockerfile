@@ -16,4 +16,4 @@ ENV MINIDB_BIN=/usr/local/bin/minidb
 USER minidb
 WORKDIR /data
 VOLUME ["/data"]
-CMD ["minidb", "/data/db"]
+CMD ["minidb", "/data/defense"]

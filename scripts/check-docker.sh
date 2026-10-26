@@ -23,13 +23,17 @@ trap 'printf "Docker check failed at line %s: %s\n" "$LINENO" "$BASH_COMMAND" >&
 compose build
 compose run --rm -T minidb minidb --help > "$logs/help"
 grep -q 'VACUUM notes' "$logs/help"
-compose run --rm -T minidb sh /usr/local/bin/sample.sh /data/sample > "$logs/seed"
+compose run --rm -T minidb sh /usr/local/bin/sample.sh /data/defense > "$logs/seed"
 printf 'SELECT * FROM datasets;\nSELECT * FROM models;\nSELECT * FROM experiments;\nEXIT;\n' |
-    compose run --rm -T minidb minidb /data/sample > "$logs/counts"
+    compose run --rm -T minidb > "$logs/counts"
 test "$(grep -c '^Строк: 5$' "$logs/counts")" -eq 2
 grep -qx 'Строк: 20' "$logs/counts"
+grep -q 'база: /data/defense' "$logs/counts"
+# Контейнерный helper с готовым бинарником сохраняет рабочий каталог /data.
+compose run --rm -T minidb sh /usr/local/bin/run.sh </dev/null > "$logs/wrapper"
+grep -q 'база: /data/sample' "$logs/wrapper"
 
-compose run --rm -T minidb minidb /data/sample > "$logs/operations" <<'SQL'
+compose run --rm -T minidb minidb /data/defense > "$logs/operations" <<'SQL'
 HELP;
 SHOW DATABASE;
 SHOW TABLES;
@@ -65,12 +69,12 @@ ALTER TABLE schema_probe DROP COLUMN linked;
 SELECT * FROM schema_probe WHERE id = 1;
 BACKUP first;
 UPDATE notes SET name = 'broken' WHERE id = 1;
-RESTORE first TO '/data/sample';
+RESTORE first TO '/data/defense';
 SELECT * FROM notes WHERE id = 1;
 OPEN '/data/other';
 CREATE TABLE probe (id INT PRIMARY KEY);
 INSERT INTO probe VALUES (1);
-OPEN '/data/sample';
+OPEN '/data/defense';
 EXIT;
 SQL
 grep -q 'Освобождено слотов: 1' "$logs/operations"
@@ -84,52 +88,52 @@ grep -qx 'Строк: 4' "$logs/operations"
 grep -qx 'Строк: 20' "$logs/operations"
 
 if printf "INSERT INTO notes VALUES (1, 'duplicate', NULL);\nEXIT;\n" |
-    compose run --rm -T minidb minidb /data/sample > "$logs/duplicate" 2>&1; then
+    compose run --rm -T minidb minidb /data/defense > "$logs/duplicate" 2>&1; then
     echo 'Duplicate PK was accepted.' >&2
     exit 1
 fi
 grep -q 'PRIMARY KEY дублируется' "$logs/duplicate"
 
 if printf "INSERT INTO experiments VALUES (NULL, 999, 1, 0.9, 'running');\nEXIT;\n" |
-    compose run --rm -T minidb minidb /data/sample > "$logs/bad-fk" 2>&1; then
+    compose run --rm -T minidb minidb /data/defense > "$logs/bad-fk" 2>&1; then
     echo 'Invalid FK was accepted.' >&2
     exit 1
 fi
 grep -q 'FOREIGN KEY' "$logs/bad-fk"
 
 if printf 'ALTER TABLE schema_probe DROP COLUMN id;\nEXIT;\n' |
-    compose run --rm -T minidb minidb /data/sample > "$logs/drop-pk" 2>&1; then
+    compose run --rm -T minidb minidb /data/defense > "$logs/drop-pk" 2>&1; then
     echo 'Dropping PRIMARY KEY was accepted.' >&2
     exit 1
 fi
 grep -q 'Нельзя удалить PRIMARY KEY' "$logs/drop-pk"
 compose run --rm -T minidb sh -ec '
-    grep -qx "VERSION 6" /data/sample/schema_probe_schema
-    grep -qx "GENERATION 6" /data/sample/schema_probe_schema
-    test -f /data/sample/schema_probe_6
-    grep -q "0.75" /data/sample/schema_probe_6
-    grep -q "999" /data/sample/schema_probe_6
-    ! grep -q "REFERENCES" /data/sample/schema_probe_schema
-    ! grep -q "linked" /data/sample/schema_probe_schema
+    grep -qx "VERSION 6" /data/defense/schema_probe_schema
+    grep -qx "GENERATION 6" /data/defense/schema_probe_schema
+    test -f /data/defense/schema_probe_6
+    grep -q "0.75" /data/defense/schema_probe_6
+    grep -q "999" /data/defense/schema_probe_6
+    ! grep -q "REFERENCES" /data/defense/schema_probe_schema
+    ! grep -q "linked" /data/defense/schema_probe_schema
 '
 
 # Незавершённое поколение после обрыва. Следующий open должен убрать его.
-compose run --rm -T minidb sh -ec 'cp /data/sample/notes_3 /data/sample/notes_99'
+compose run --rm -T minidb sh -ec 'cp /data/defense/notes_3 /data/defense/notes_99'
 printf 'SELECT * FROM notes WHERE id = 1;\nSELECT * FROM notes WHERE id = 51;\nEXIT;\n' |
-    compose run --rm -T minidb minidb /data/sample > "$logs/restarted"
+    compose run --rm -T minidb > "$logs/restarted"
 grep -q '"saved"' "$logs/restarted"
 grep -q '"after_vac"' "$logs/restarted"
 test "$(grep -c '^Строк: 1$' "$logs/restarted")" -eq 2
 compose run --rm -T minidb sh -ec '
     test "$(id -u)" -eq 10001
-    test -f /data/sample/notes_3
-    test ! -e /data/sample/notes_1
-    test ! -e /data/sample/notes_2
-    test ! -e /data/sample/notes_99
-    grep -qx "VERSION 2" /data/sample/notes_schema
-    grep -qx "GENERATION 3" /data/sample/notes_schema
+    test -f /data/defense/notes_3
+    test ! -e /data/defense/notes_1
+    test ! -e /data/defense/notes_2
+    test ! -e /data/defense/notes_99
+    grep -qx "VERSION 2" /data/defense/notes_schema
+    grep -qx "GENERATION 3" /data/defense/notes_schema
 '
-compose run --rm -T minidb minidb gen /data/sample --out /data/generated
+compose run --rm -T minidb minidb gen /data/defense --out /data/generated
 compose run --rm -T minidb sh -ec 'test -s /data/generated/tables.rs; grep -q "pub struct Experiment" /data/generated/tables.rs'
 compose run --rm -T minidb minidb-bench /data/bench 5000 > "$logs/benchmark"
 grep -qx 'rows,queries,scan_ms,index_ms,select_ms,speedup,checksum' "$logs/benchmark"

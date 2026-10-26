@@ -55,6 +55,27 @@ fn success(output: &Output) -> String {
 }
 
 #[test]
+fn prebuilt_run_script_opens_default_database_in_the_callers_directory() {
+    let temp = Temp::new();
+    let scripts = temp.0.join("bin");
+    fs::create_dir(&scripts).unwrap();
+    let script = scripts.join("run.sh");
+    fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/run.sh"), &script).unwrap();
+    let output = Command::new("sh")
+        .arg(script)
+        .current_dir(&temp.0)
+        .env("MINIDB_BIN", env!("CARGO_BIN_EXE_minidb"))
+        .stdin(Stdio::null())
+        .output()
+        .unwrap();
+    let stdout = success(&output);
+    let expected = temp.0.join("sample");
+    assert!(stdout.contains(&expected.display().to_string()));
+    assert!(expected.join(".lock").exists());
+    assert!(!scripts.join("sample").exists());
+}
+
+#[test]
 fn console_crud_multiline_filters_and_restart() {
     let temp = Temp::new();
     let output = temp.run("create table notes (\nid int primary key,\nname string(200) not null, score float\n);\ninsert into notes (name, score) values ('Ann', 1);\ninsert into notes values (null, 'Bob', 0.8);\ninsert into notes values (null, 'Unicode: я; \\n \\t \\\\', null);\nselect id, name from notes where (score >= 0.8 and id != 2) or score is null;\nupdate notes set name = 'Alice', score = 0.95 where id = 1;\ndelete from notes where id = 2;\ndescribe notes;\ntables;\nexit\n");
