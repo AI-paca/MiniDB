@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <mxfile host="app.diagrams.net" type="device">
   <diagram id="04-select.drawio" name="4. Поиск по PK: что ускоряет индекс и что измеряется">
-    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1180" background="#ffffff">
+    <mxGraphModel grid="1" gridSize="10" page="1" pageWidth="1600" pageHeight="1410" background="#ffffff">
       <root>
         <mxCell id="0" />
         <mxCell id="1" parent="0" />
@@ -38,8 +38,14 @@
         <mxCell id="result" value="Одинаковый результат&#10;Проекция нужных полей → callback / вывод CLI; NULL в сравнении даёт UNKNOWN, WHERE пропускает только TRUE." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="160" y="910" width="1280" height="80" as="geometry" />
         </mxCell>
+        <mxCell id="pk-lifecycle" value="PK: значение на диске; HashMap — только в RAM&#10;В &lt;таблица&gt;_&lt;generation&gt; ID хранится обычным полем строки.&#10;При open: прочитать слоты; построить PK → offset_RAM по LIVE.&#10;INSERT добавляет адрес; DELETE убирает; UPDATE PK меняет ключ.&#10;ALTER / DROP COLUMN / VACUUM перестраивают карту после переписи.&#10;Индекс не сохраняется отдельным файлом; hash(PK) не записывается." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="30" y="1040" width="740" height="185" as="geometry" />
+        </mxCell>
+        <mxCell id="fk-runtime" value="FK использует PK-индекс родительской таблицы&#10;REFERENCES находится в Schema; значение FK — в данных.&#10;INSERT / UPDATE ребёнка → lookup в parent.index по значению FK.&#10;DELETE / изменение PK родителя → scan детей и RESTRICT.&#10;DROP FOREIGN KEY снимает REFERENCES; проверки исчезают сразу.&#10;Отдельного FK-индекса нет; поиск ссылок остаётся линейным." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=16;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#eff6ff;strokeColor=#537eac;strokeWidth=1.5;" vertex="1" parent="1">
+          <mxGeometry x="830" y="1040" width="740" height="185" as="geometry" />
+        </mxCell>
         <mxCell id="bench" value="ЗАМЕР · 5000 строк / 1000 одинаковых PK запросов / release&#10;Принудительный Database::scan: 66.159 мс · get(id): 0.143 мс · SELECT id = …: 0.134 мс&#10;Checksum = 2486500 у всех путей. Открытие, наполнение и sync вне таймера; данные уже в RAM.&#10;Разница — число просмотренных записей. Это один запуск, не гарантия ускорения и не тест дискового I/O." style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f3f5f8;strokeColor=#8090a2;strokeWidth=1.5;" vertex="1" parent="1">
-          <mxGeometry x="30" y="1040" width="1540" height="115" as="geometry" />
+          <mxGeometry x="30" y="1270" width="1540" height="115" as="geometry" />
         </mxCell>
         <mxCell id="edge-1" value="" style="edgeStyle=orthogonalEdgeStyle;rounded=0;endArrow=block;html=0;fontSize=14;fontFamily=Arial;labelBackgroundColor=#ffffff;strokeColor=#8090a2;strokeWidth=1.7;exitX=0.5;exitY=1;entryX=0.5;entryY=0;" edge="1" parent="1" source="start" target="choice">
           <mxGeometry relative="1" as="geometry" />

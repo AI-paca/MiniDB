@@ -78,23 +78,34 @@ paragraph('На таблицу: имя_schema — CREATE TABLE, VERSION, GENERAT
 paragraph('ALTER (ADD/DROP COLUMN, снятие FK) и VACUUM собирают живые строки в новом поколении: sync данных → атомарная замена схемы → sync каталога → удаление прежнего файла. Открытие убирает осиротевшие поколения. ALTER увеличивает VERSION и GENERATION; VACUUM — только GENERATION, если есть мёртвые слоты. Максимум auto-ID сохраняется.')
 title('Архитектура')
 paragraph('sql.rs → Database (PK/FK, запросы, backup) → Table → TextFile. Описатель разделён на Schema (поля и ограничения) и Layout (NULL-bitmap, ширины, смещения в RAM). Row заимствует оба описателя и байты слота. UTF-8 декодируется в RAM; обычный CRUD сохраняет атомарный снимок текущего файла. Индекс PK → offset адресует слот в RAM, не байт текстового файла.', size=10)
-paragraph('ADD/DROP перекодируют все живые строки одной таблицы: оставшиеся поля сопоставляются по имени, новые получают NULL. Ядро не пересобирается. Время зависит от старых слотов, новых байтов и числа колонок; одновременно в RAM лежат старый и новый буферы. Например, 100 тыс. строк по 100 байт + STRING(128): около 33 МБ двух буферов, без индекса. На диске до переключения тоже два поколения.', size=10)
+paragraph('ADD/DROP перекодируют живые строки одной таблицы: оставшиеся поля сопоставляются по имени, новые получают NULL. Ядро не пересобирается; одновременно в RAM находятся старый и новый буферы. До переключения на диске тоже лежат два поколения.', size=10)
 ctx.show_page()
 
-page(2, 'Сценарий защиты, проверки и результат индекса')
-paragraph('Локально: ./sample.sh scratch/defense, затем ./run.sh scratch/defense. Docker: docker compose build; docker compose run --rm minidb sh /usr/local/bin/sample.sh /data/defense; docker compose run --rm minidb minidb /data/defense. Пример содержит 5 datasets, 5 models и 20 experiments; первые три experiments — из ТЗ.', size=10)
+page(2, 'Запуск, примеры операций и результат индекса')
+paragraph('Локально нужен Rust/Cargo 1.89+. Для Docker Rust на хосте не нужен: один раз выполните docker compose build. Два режима запуска:', size=10)
+for command, mode in [
+    ('./run.sh', 'пустая база'),
+    ('./run.sh sample', 'база из ТЗ'),
+    ('docker compose run --rm minidb', 'пустая база'),
+    ('docker compose run --rm minidb sample', 'база из ТЗ'),
+]:
+    text(command, size=9)
+    text(mode, x=390, size=9)
+    y += 16
+paragraph('Локальные пути: db/main и db/sample; в Docker: /data/db и /data/sample. sample — текстовый SQL-файл наполнения. Повторный запуск открывает сохранённую базу. Пример: 5 datasets, 5 models и 20 experiments; первые три experiments — из ТЗ. HELP; показывает справку.', size=10)
 title('Операции и ожидаемый результат')
 for command in [
+    'CREATE TABLE notes (id INT PRIMARY KEY, text STRING(64), score FLOAT);',
     "INSERT INTO datasets (name, task, size) VALUES ('demo', 'classification', 43);",
-    'SELECT id, name FROM datasets WHERE size >= 100;',
+    'SELECT id, name FROM datasets WHERE size >= 40;',
     "UPDATE datasets SET size = 44 WHERE name = 'demo';",
     "DELETE FROM datasets WHERE name = 'demo';",
     "INSERT INTO experiments VALUES (NULL, 999, 1, 0.9, 'running');",
+    'EXIT;',
 ]:
     text(command, size=8.3)
     y += 16
-paragraph('INSERT выдаёт авто-ID; UPDATE и DELETE меняют по одной строке. Последний запрос отклоняется из-за FK. После EXIT и повторного открытия остаются 20 experiments. Поддерживаются шесть сравнений, AND/OR, NOT, IS NULL, INNER JOIN и backup/restore.', size=10)
-paragraph('ADD nullable-колонки с REFERENCES сразу включает FK-проверку для следующих INSERT/UPDATE; старые строки получают NULL. DROP FOREIGN KEY сохраняет значения и снимает связь; DROP COLUMN удаляет поле и его FK. Удалять PK запрещено. Ссылки блокируют DELETE/смену PK родителя (RESTRICT). Перезапуск после ALTER не нужен; внешние правки файлов требуют повторного открытия.', size=10)
+paragraph('INSERT выдаёт авто-ID; UPDATE и DELETE меняют по одной строке. INSERT с dataset 999 отклоняется из-за FK. Повторите запуск с sample, затем SHOW TABLES; SELECT * FROM experiments; — notes и 20 experiments сохранились. Поддерживаются шесть сравнений (=, !=, >, <, >=, <=), AND/OR, выбор полей и INNER JOIN.', size=10)
 title('Сравнение поиска с индексом и без')
 with (ROOT / 'docs/benchmark.csv').open() as file:
     bench = next(csv.DictReader(file))
@@ -105,7 +116,5 @@ for label, value in [('Полный просмотр', bench['scan_ms']), ('Ин
     text(value + ' мс', x=340)
     y += 21
 paragraph('Повторить: cargo run --locked --offline --release --example bench -- scratch/bench 5000. Это один локальный замер; результат зависит от машины.', size=9)
-title('Проверки и ограничения')
-paragraph('101 автотест: CRUD, перезапуск, типы, PK/FK, JOIN, фильтры, поколения и генератор. scripts/check-docker.sh проверяет все команды в отдельном Docker-томе. Два workflow через act экспортируют drawio в README и справку --help в docs/COMMANDS.md.', size=10)
-paragraph('Генератор читает *_schema; Rust-структуры компилирует потребитель. WAL и транзакций на несколько команд нет; пакет UPDATE ограничен 16 МиБ. Полного аудита FK сохранённых строк при открытии нет. Восстановление поколений относится к полной переписи; физическое отключение питания не проверялось.', size=10)
+paragraph('Исходники: https://github.com/AI-paca/MiniDB. Данные примера: db/sample; схема dbdiagram.io: docs/schema.dbml; результаты замера: docs/benchmark.csv.', size=9)
 surface.finish()

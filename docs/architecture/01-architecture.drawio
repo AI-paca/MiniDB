@@ -56,7 +56,7 @@
         <mxCell id="row" value="Row · record.rs&#10;Заимствованный срез байтов&#10;Row::at(i) → Value&#10;Запись проверяет типы и NULL" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#f6f1fa;strokeColor=#9170af;strokeWidth=1.5;" vertex="1" parent="1">
           <mxGeometry x="1280" y="650" width="360" height="110" as="geometry" />
         </mxCell>
-        <mxCell id="disk" value="ДИСК · каталог sample/" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
+        <mxCell id="disk" value="ДИСК · каталог db/sample/" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;verticalAlign=top;fontStyle=1;spacingTop=12;" vertex="1" parent="1">
           <mxGeometry x="30" y="850" width="1180" height="220" as="geometry" />
         </mxCell>
         <mxCell id="schemafile" value="datasets_schema&#10;CREATE TABLE / VERSION&#10;GENERATION / auto-ID" style="rounded=1;arcSize=8;whiteSpace=wrap;html=0;fontFamily=Arial;fontSize=17;fontColor=#233347;spacing=12;align=left;verticalAlign=middle;fillColor=#fff2f0;strokeColor=#c58179;strokeWidth=1.5;" vertex="1" parent="1">
