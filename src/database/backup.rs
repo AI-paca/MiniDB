@@ -100,19 +100,19 @@ fn copy_tables(source: &Path, destination: &Path) -> Result<()> {
     if schemas.is_empty() {
         return Err(empty_error(source));
     }
-    for entry in fs::read_dir(source)? {
-        let entry = entry?;
-        let path = entry.path();
-        let filename = entry.file_name();
-        let filename = filename.to_string_lossy();
-        if entry.file_type()?.is_file()
-            && schemas.iter().any(|(table, schema)| {
-                path == *schema || crate::storage::is_segment(&filename, table)
-            })
-        {
-            let target = destination.join(entry.file_name());
-            fs::copy(path, &target)?;
-            OpenOptions::new().write(true).open(target)?.sync_all()?;
+    for (table, schema) in schemas {
+        let mut paths = vec![schema];
+        paths.extend(crate::storage::segment_files(source, &table)?);
+        for path in paths {
+            let target = destination.join(path.strip_prefix(source)?);
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            fs::copy(&path, &target)?;
+            OpenOptions::new().write(true).open(&target)?.sync_all()?;
+            if let Some(parent) = target.parent() {
+                crate::storage::sync_directory(parent)?;
+            }
         }
     }
     crate::storage::sync_directory(destination)?;

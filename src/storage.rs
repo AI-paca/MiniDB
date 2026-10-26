@@ -69,8 +69,13 @@ pub(crate) fn schema_path(root: &std::path::Path, name: &str) -> crate::Result<s
     })
 }
 
+/// v1 рядом со схемой; последующие версии — в каталогах vN, без расширений.
 pub(crate) fn segment_path(root: &std::path::Path, name: &str, version: u32) -> std::path::PathBuf {
-    root.join(format!("{name}.v{version}.data"))
+    if version == 1 {
+        root.join(name)
+    } else {
+        root.join(format!("v{version}")).join(name)
+    }
 }
 
 pub(crate) fn existing_segment(
@@ -78,25 +83,49 @@ pub(crate) fn existing_segment(
     name: &str,
     version: u32,
 ) -> crate::Result<std::path::PathBuf> {
-    let canonical = segment_path(root, name, version);
-    let previous = root.join(format!("{name}.data"));
-    if version == 1 && previous.exists() {
-        if canonical.exists() {
-            return Err(format!("Несколько файлов сегмента {name} VERSION {version}").into());
-        }
-        return Ok(previous);
+    let binary = root.join(format!("{name}.v{version}.data"));
+    if binary.exists() || root.join(format!("{name}.data")).exists() {
+        return Err("Каталог содержит бинарные данные: откройте его в ветке binary; текстовая ветка хранит UTF-8 без расширений".into());
     }
-    Ok(canonical)
+    Ok(segment_path(root, name, version))
 }
 
-pub(crate) fn is_segment(filename: &str, table: &str) -> bool {
-    filename == format!("{table}.data")
-        || filename
-            .strip_prefix(&format!("{table}.v"))
-            .and_then(|rest| rest.strip_suffix(".data"))
-            .is_some_and(|version| {
-                !version.is_empty() && version.bytes().all(|b| b.is_ascii_digit())
-            })
+pub(crate) fn segment_files(
+    root: &std::path::Path,
+    name: &str,
+) -> crate::Result<Vec<std::path::PathBuf>> {
+    let mut files = Vec::new();
+    if root.join(format!("{name}.data")).exists() {
+        return Err("Бинарная база: используйте ветку binary".into());
+    }
+    if root.join(name).exists() {
+        files.push(root.join(name));
+    }
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let filename = entry.file_name();
+        if filename
+            .to_str()
+            .and_then(|s| s.strip_prefix(&format!("{name}.v")))
+            .and_then(|s| s.strip_suffix(".data"))
+            .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()))
+        {
+            return Err("Бинарная база: используйте ветку binary".into());
+        }
+        let Some(version) = filename.to_str().and_then(|s| s.strip_prefix('v')) else {
+            continue;
+        };
+        if !version.is_empty()
+            && version.bytes().all(|b| b.is_ascii_digit())
+            && entry.file_type()?.is_dir()
+        {
+            let path = entry.path().join(name);
+            if path.exists() {
+                files.push(path);
+            }
+        }
+    }
+    Ok(files)
 }
 
 /// Точный фильтр *.schema.sql / *.schema, без эвристик по содержимому или dot-файлам.

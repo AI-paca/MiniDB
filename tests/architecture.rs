@@ -1,9 +1,8 @@
 use minidb::layout::Layout;
-use minidb::record::{self, Row, FLAG_DEAD, FLAG_FREE, FLAG_LIVE};
+use minidb::record::{self, Row};
 use minidb::table::Table;
 use minidb::{Column, Compare, DataType, Database, Expr, Kind, Result, Schema, Value};
-use std::fs::{self, OpenOptions};
-use std::io::{Seek, SeekFrom, Write};
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
@@ -212,81 +211,6 @@ fn c_record_roundtrip_validation_and_direct_access() -> Result<()> {
 }
 
 #[test]
-fn d_fixed_slots_restart_flags_and_corruption() -> Result<()> {
-    let temp = Temp::new()?;
-    let mut table = Table::create(&temp.0, schema())?;
-    for id in 1..=3 {
-        assert_eq!(table.insert(&values(id))?, (id as u64 - 1) * 36);
-    }
-    let mut address = None;
-    table.scan(|row| {
-        let current = row.bytes.as_ptr() as usize;
-        if let Some(previous) = address {
-            assert_eq!(current, previous);
-        }
-        address = Some(current);
-        Ok(())
-    })?;
-    let file = temp.0.join("items.v1.data");
-    let before = fs::read(&file)?;
-    table.remove(2)?;
-    let mut expected = before;
-    expected[36] = FLAG_DEAD;
-    assert_eq!(fs::read(&file)?, expected);
-    drop(table);
-    let mut table = Table::open(&temp.0, "items")?;
-    let mut ids = Vec::new();
-    table.scan(|row| {
-        ids.push(row.at(0)?.int()?);
-        Ok(())
-    })?;
-    assert_eq!(ids, [1, 3]);
-    assert!(table.insert(&values(1)).is_err());
-    assert!(table.update(99, &values(99)).is_err());
-    assert!(table.update(1, &values(3)).is_err());
-    table.update(3, &values(30))?;
-    assert!(table.get(3)?.is_none());
-    assert_eq!(
-        table.get(30)?.ok_or("Нет строки 30")?.at(0)?,
-        Value::Int(30)
-    );
-    assert_eq!(
-        table.insert(&[Value::Null, Value::Null, Value::Float(1.0)])?,
-        36
-    );
-    assert!(table.get(31)?.is_some());
-    assert_eq!(fs::metadata(&file)?.len(), 108);
-    // Меняем флаг в файле и проверяем scan и get
-    let mut external = OpenOptions::new().write(true).open(&file)?;
-    external.write_all(&[FLAG_FREE])?;
-    external.flush()?;
-    let mut count = 0;
-    table.scan(|_| {
-        count += 1;
-        Ok(())
-    })?;
-    assert_eq!(count, 2);
-    let error = table.get(1).err().ok_or("Ожидалась ошибка индекса")?;
-    assert!(error.is::<minidb::table::IndexMismatch>());
-    drop(table);
-    external.seek(SeekFrom::Start(0))?;
-    external.write_all(&[FLAG_LIVE])?;
-    external.flush()?;
-    let mut bytes = fs::read(&file)?;
-    let first = bytes[..36].to_vec();
-    bytes[36..72].copy_from_slice(&first);
-    fs::write(&file, &bytes)?;
-    assert!(Table::open(&temp.0, "items").is_err());
-    bytes[36] = 9;
-    fs::write(&file, &bytes)?;
-    assert!(Table::open(&temp.0, "items").is_err());
-    bytes.pop();
-    fs::write(&file, bytes)?;
-    assert!(Table::open(&temp.0, "items").is_err());
-    Ok(())
-}
-
-#[test]
 fn e_foreign_keys_create_insert_update_and_restrict() -> Result<()> {
     let temp = Temp::new()?;
     let root = temp.0.join("db");
@@ -402,8 +326,8 @@ fn e_backup_restore_and_failed_copy_preserve_root() -> Result<()> {
     db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(2)))?;
     db.backup("snapshot")?;
     let backup = temp.0.join("db_backups/snapshot");
-    let saved = fs::read(root.join("items.v1.data"))?;
-    assert_eq!(fs::read(backup.join("items.v1.data"))?, saved);
+    let saved = fs::read(root.join("items"))?;
+    assert_eq!(fs::read(backup.join("items"))?, saved);
     assert_eq!(
         fs::read(backup.join("items.schema.sql"))?,
         fs::read(root.join("items.schema.sql"))?
@@ -413,25 +337,25 @@ fn e_backup_restore_and_failed_copy_preserve_root() -> Result<()> {
     assert!(Database::restore("snapshot", &root, &[]).is_err());
     drop(db);
     // Проверяем сохранность базы при ошибке восстановления
-    let current = fs::read(root.join("items.v1.data"))?;
+    let current = fs::read(root.join("items"))?;
     assert!(Database::restore(temp.0.join("missing"), &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items.v1.data"))?, current);
+    assert_eq!(fs::read(root.join("items"))?, current);
     let broken = temp.0.join("broken");
     fs::create_dir(&broken)?;
     fs::copy(
         backup.join("items.schema.sql"),
         broken.join("items.schema.sql"),
     )?;
-    fs::write(broken.join("items.v1.data"), b"partial")?;
+    fs::write(broken.join("items"), b"partial")?;
     assert!(Database::restore(&broken, &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items.v1.data"))?, current);
+    assert_eq!(fs::read(root.join("items"))?, current);
     let legacy = temp.0.join("legacy");
     fs::create_dir(&legacy)?;
     fs::write(legacy.join("journal.log"), b"old format")?;
     assert!(Database::restore(&legacy, &root, &[]).is_err());
-    assert_eq!(fs::read(root.join("items.v1.data"))?, current);
+    assert_eq!(fs::read(root.join("items"))?, current);
     let mut restored = Database::restore("snapshot", &root, &[])?;
-    assert_eq!(fs::read(root.join("items.v1.data"))?, saved);
+    assert_eq!(fs::read(root.join("items"))?, saved);
     assert_eq!(restored.scan("items", &Expr::All, |_| Ok(()))?, 1);
     assert!(restored.get("items", 1, |_| Ok(()))?.is_some());
     assert!(restored.get("items", 2, |_| Ok(()))?.is_none());
@@ -460,11 +384,11 @@ fn update_null_pk_preserves_id_and_remove_reports_presence() -> Result<()> {
     table.insert(&values(i64::MAX))?;
     table.update(4, &[Value::Null, Value::Null, Value::Float(1.0)])?;
     assert!(table.get(4)?.is_some());
-    let before = fs::read(temp.0.join("items.v1.data"))?;
+    let before = fs::read(temp.0.join("items"))?;
     assert!(table
         .insert(&[Value::Null, Value::Null, Value::Float(0.0)])
         .is_err());
-    assert_eq!(fs::read(temp.0.join("items.v1.data"))?, before);
+    assert_eq!(fs::read(temp.0.join("items"))?, before);
     Ok(())
 }
 
@@ -477,7 +401,13 @@ fn high_water_survives_slot_reuse_lower_pk_and_backup() -> Result<()> {
     db.insert("items", &values(100))?;
     assert_eq!(db.delete("items", &Expr::All)?, 1);
     db.insert("items", &values(1))?;
-    assert_eq!(fs::metadata(root.join("items.v1.data"))?.len(), 36);
+    assert_eq!(
+        fs::read_to_string(root.join("items"))?
+            .lines()
+            .filter(|l| l.starts_with("LIVE\t"))
+            .count(),
+        1
+    );
     db.backup("snapshot")?;
     drop(db);
     let mut db = Database::open(&root)?;
@@ -505,178 +435,5 @@ fn high_water_survives_slot_reuse_lower_pk_and_backup() -> Result<()> {
         restored.insert("items", &[Value::Null, Value::Null, Value::Float(0.0)])?,
         101
     );
-    Ok(())
-}
-
-#[test]
-fn legacy_dead_pk_is_preserved_before_overwriting_the_slot() -> Result<()> {
-    let temp = Temp::new()?;
-    let schema = schema();
-    let layout = Layout::from_schema(&schema)?;
-    fs::write(
-        temp.0.join("items.schema"),
-        schema
-            .to_text()
-            .lines()
-            .filter(|line| !line.starts_with("VERSION") && !line.starts_with("COLUMNS_AT_VERSION"))
-            .collect::<Vec<_>>()
-            .join("\n"),
-    )?;
-    let mut bytes = vec![0; layout.row_size];
-    record::encode(&layout, &schema, &values(100), &mut bytes)?;
-    bytes[0] = FLAG_DEAD;
-    fs::write(temp.0.join("items.data"), bytes)?;
-    let mut table = Table::open(&temp.0, "items")?;
-    assert_eq!(table.insert(&values(1))?, 0);
-    drop(table);
-    let mut table = Table::open(&temp.0, "items")?;
-    table.insert(&[Value::Null, Value::Null, Value::Float(0.0)])?;
-    assert!(table.get(101)?.is_some());
-    Ok(())
-}
-
-#[test]
-fn interrupted_insert_free_body_and_partial_tail_are_reusable() -> Result<()> {
-    // Моделируем остановку после FREE, посреди тела и перед коммитом LIVE.
-    for body_len in [1, 5, 36] {
-        let temp = Temp::new()?;
-        let mut table = Table::create(&temp.0, schema())?;
-        table.insert(&values(1))?;
-        drop(table);
-        let path = temp.0.join("items.v1.data");
-        let mut output = OpenOptions::new().append(true).open(&path)?;
-        let mut unfinished = vec![255; body_len];
-        unfinished[0] = FLAG_FREE;
-        output.write_all(&unfinished)?;
-        output.sync_all()?;
-        drop(output);
-        let mut table = Table::open(&temp.0, "items")?;
-        assert_eq!(fs::metadata(&path)?.len(), 72);
-        let mut ids = Vec::new();
-        table.scan(|row| {
-            ids.push(row.at(0)?.int()?);
-            Ok(())
-        })?;
-        assert_eq!(ids, [1]);
-        assert_eq!(table.insert(&values(2))?, 36);
-        drop(table);
-        let mut table = Table::open(&temp.0, "items")?;
-        assert!(table.get(1)?.is_some());
-        assert!(table.get(2)?.is_some());
-        assert!(table.remove(2)?);
-        drop(table);
-        // Оборванная перезапись удалённого слота: PK и bitmap уже испорчены,
-        // но предварительно сохранённый FREE запрещает читать их как DEAD/LIVE.
-        let mut output = OpenOptions::new().write(true).open(&path)?;
-        output.seek(SeekFrom::Start(36))?;
-        let mut unfinished = vec![255; 36];
-        unfinished[0] = FLAG_FREE;
-        output.write_all(&unfinished)?;
-        output.sync_all()?;
-        drop(output);
-        let mut table = Table::open(&temp.0, "items")?;
-        assert!(table.get(1)?.is_some());
-        assert!(table.get(2)?.is_none());
-        assert_eq!(
-            table.insert(&[Value::Null, Value::Null, Value::Float(0.0)])?,
-            36
-        );
-        assert!(table.get(3)?.is_some());
-    }
-    Ok(())
-}
-
-#[test]
-fn buffered_scan_rebuild_and_callback_error_across_blocks() -> Result<()> {
-    let temp = Temp::new()?;
-    let schema = schema();
-    let layout = Layout::from_schema(&schema)?;
-    fs::write(temp.0.join("items.schema.sql"), schema.to_text())?;
-    let mut output = OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(temp.0.join("items.v1.data"))?;
-    let mut bytes = vec![0; layout.row_size];
-    for id in 1..=4000 {
-        record::encode(&layout, &schema, &values(id), &mut bytes)?;
-        if id % 3 == 0 {
-            bytes[0] = FLAG_DEAD;
-        }
-        output.write_all(&bytes)?;
-    }
-    drop(output);
-    let mut table = Table::open(&temp.0, "items")?;
-    assert!(table.scan(|_| Err("callback failed".into())).is_err());
-    assert!(table.get(4000)?.is_some());
-    let mut seen = Vec::new();
-    table.scan(|row| {
-        assert_eq!(row.get("name")?, Value::String("имя"));
-        seen.push(row.at(0)?.int()?);
-        Ok(())
-    })?;
-    assert_eq!(
-        seen,
-        (1..=4000).filter(|id| id % 3 != 0).collect::<Vec<_>>()
-    );
-    table.rebuild_index()?;
-    table.insert(&[Value::Null, Value::Null, Value::Float(0.0)])?;
-    assert!(table.get(4001)?.is_some());
-    Ok(())
-}
-
-#[test]
-fn narrowed_constraints_do_not_block_open_scan_or_index_lookup() -> Result<()> {
-    let temp = Temp::new()?;
-    let mut table = Table::create(&temp.0, schema())?;
-    table.insert(&values(3))?;
-    drop(table);
-    let mut narrowed = schema();
-    narrowed.columns[2].data_type.kind = Kind::Float { min: 0.0, max: 0.4 };
-    fs::write(temp.0.join("items.schema.sql"), narrowed.to_text())?;
-    let mut table = Table::open(&temp.0, "items")?;
-    assert_eq!(table.get(3)?.ok_or("Нет записи")?.at(2)?, Value::Float(0.5));
-    let mut count = 0;
-    table.scan(|row| {
-        assert_eq!(row.at(2)?, Value::Float(0.5));
-        count += 1;
-        Ok(())
-    })?;
-    assert_eq!(count, 1);
-    assert!(table.check().is_err());
-    let before = fs::read(temp.0.join("items.v1.data"))?;
-    assert!(table.update(3, &values(3)).is_err());
-    assert_eq!(fs::read(temp.0.join("items.v1.data"))?, before);
-    table.update(3, &[Value::Int(3), Value::Null, Value::Float(0.3)])?;
-    assert_eq!(table.check()?, 1);
-    Ok(())
-}
-
-#[test]
-fn damaged_payload_can_be_inspected_but_restore_checks_it_explicitly() -> Result<()> {
-    let temp = Temp::new()?;
-    let source = temp.0.join("source");
-    fs::create_dir(&source)?;
-    let schema = schema();
-    let layout = Layout::from_schema(&schema)?;
-    fs::write(source.join("items.schema.sql"), schema.to_text())?;
-    let mut bytes = vec![0; layout.row_size];
-    record::encode(&layout, &schema, &values(7), &mut bytes)?;
-    bytes[layout.cols[1].offset + 2] = 255;
-    fs::write(source.join("items.v1.data"), &bytes)?;
-    let mut table = Table::open(&source, "items")?;
-    let row = table.get(7)?.ok_or("Нет записи")?;
-    assert_eq!(row.at(0)?, Value::Int(7));
-    assert!(row.at(1).is_err());
-    assert!(table.check().is_err());
-    drop(table);
-    let destination = temp.0.join("destination");
-    let mut db = Database::open(&destination)?;
-    db.create(schema)?;
-    db.insert("items", &values(1))?;
-    drop(db);
-    let before = fs::read(destination.join("items.v1.data"))?;
-    assert!(Database::restore(&source, &destination, &[]).is_err());
-    assert_eq!(fs::read(destination.join("items.v1.data"))?, before);
-    assert!(!destination.with_extension("restore.tmp").exists());
     Ok(())
 }

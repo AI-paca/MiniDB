@@ -3,7 +3,6 @@ use minidb::record::{self, Row};
 use minidb::table::Table;
 use minidb::{codegen, Column, DataType, Result, Schema, Value};
 use std::fs;
-use std::io::{Seek, SeekFrom, Write};
 use std::path::PathBuf;
 use std::process::Command;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -154,7 +153,7 @@ fn appends_and_deletes_keep_schema_unchanged_until_checkpoint_is_needed() -> Res
     assert!(!fs::read_to_string(&path)?.contains("-- minidb-highest-id: 201"));
     table.sync()?;
     assert!(fs::read_to_string(&path)?.contains("-- minidb-highest-id: 201"));
-    assert_eq!(table.segments()[0].path(), temp.0.join("items.v1.data"));
+    assert_eq!(table.segments()[0].path(), temp.0.join("items"));
     assert_eq!(table.segments()[0].slot_count(), 3);
     assert_eq!(table.segments()[0].free_slot_count(), 0);
     Ok(())
@@ -180,12 +179,10 @@ fn crash_writer_child() -> Result<()> {
             table.insert(&values(1))?;
             if mode == "free" {
                 // Состояние после тела FREE, но до коммита LIVE при reuse.
-                let mut file = fs::OpenOptions::new()
-                    .write(true)
-                    .open(root.join("items.v1.data"))?;
-                file.seek(SeekFrom::Start(0))?;
-                file.write_all(&[record::FLAG_FREE])?;
-                file.sync_all()?;
+                fs::write(
+                    root.join("items"),
+                    "# MiniDB text; VERSION 1\n# state\tid\tname\nFREE\n",
+                )?;
             }
         }
         "lower" => table.update(100, &values(1))?,
@@ -231,8 +228,8 @@ fn unchanged_update_has_the_same_count_and_preserves_files_in_all_segments() -> 
         "items",
         &[Value::Int(2), Value::String("running"), Value::Null],
     )?;
-    let before1 = fs::read(temp.0.join("items.v1.data"))?;
-    let before2 = fs::read(temp.0.join("items.v2.data"))?;
+    let before1 = fs::read(temp.0.join("items"))?;
+    let before2 = fs::read(temp.0.join("v2/items"))?;
     assert_eq!(
         db.update(
             "items",
@@ -245,8 +242,8 @@ fn unchanged_update_has_the_same_count_and_preserves_files_in_all_segments() -> 
         db.update("items", &minidb::Expr::All, &[("score", Value::Null)])?,
         0
     );
-    assert_eq!(fs::read(temp.0.join("items.v1.data"))?, before1);
-    assert_eq!(fs::read(temp.0.join("items.v2.data"))?, before2);
+    assert_eq!(fs::read(temp.0.join("items"))?, before1);
+    assert_eq!(fs::read(temp.0.join("v2/items"))?, before2);
     assert_eq!(
         db.update(
             "items",

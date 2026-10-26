@@ -1,6 +1,4 @@
 // Измеряем только поток теста и только SELECT, без создания исходных строк/БД.
-use minidb::layout::Layout;
-use minidb::record;
 use minidb::{Column, DataType, Database, Expr, Result, Schema, Value};
 use std::alloc::{GlobalAlloc, Layout as AllocLayout, System};
 use std::cell::Cell;
@@ -51,21 +49,12 @@ fn select_reuses_the_buffer_for_borrowed_strings_without_per_row_allocations() -
             ],
             0,
         );
-        let layout = Layout::from_schema(&schema)?;
-        let mut bytes = Vec::new();
+        let mut text = String::from("# MiniDB text; VERSION 1\n# state\tid\tname\n");
         for id in 1..=1000 {
-            let offset = bytes.len();
-            bytes.resize(offset + layout.row_size, 0);
-            let name = format!("строка {id}");
-            record::encode(
-                &layout,
-                &schema,
-                &[Value::Int(id), Value::String(&name)],
-                &mut bytes[offset..],
-            )?;
+            text.push_str(&format!("LIVE\t{id}\t\"строка {id}\"\n"));
         }
         fs::write(root.join("items.schema.sql"), schema.to_text())?;
-        fs::write(root.join("items.v1.data"), bytes)?;
+        fs::write(root.join("items"), text)?;
         let mut db = Database::open(&root)?;
         let mut sum = 0;
         let mut count = 0;

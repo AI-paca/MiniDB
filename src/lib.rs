@@ -8,6 +8,7 @@ pub mod schema;
 pub mod sql;
 mod storage;
 pub mod table;
+mod text_file;
 pub mod types;
 
 pub use database::Database;

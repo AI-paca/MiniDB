@@ -1,5 +1,5 @@
 use minidb::layout::Layout;
-use minidb::record::{self, Row, FLAG_DEAD};
+use minidb::record::{self, Row};
 use minidb::schema::check_evolution;
 use minidb::table::Table;
 use minidb::{codegen, Column, Compare, DataType, Database, Expr, Result, Schema, Value};
@@ -152,15 +152,15 @@ fn migration_scan_update_delete_reopen_and_backup_use_all_segments() -> Result<(
         db.delete("items", &Expr::Compare("id", Compare::Eq, Value::Int(3)))?,
         1
     );
-    let v1 = fs::read(root.join("items.v1.data"))?;
+    let v1 = fs::read(root.join("items"))?;
     db.add_column("items", Column::new("score", nullable(DataType::FLOAT)))?;
-    assert_eq!(fs::read(root.join("items.v1.data"))?, v1);
+    assert_eq!(fs::read(root.join("items"))?, v1);
     db.insert_versioned(
         "items",
         2,
         &[Value::Int(4), Value::String("new"), Value::Float(0.5)],
     )?;
-    assert_eq!(fs::read(root.join("items.v1.data"))?, v1); // Старые free-слоты не используются.
+    assert_eq!(fs::read(root.join("items"))?, v1); // Старые free-слоты не используются.
     assert!(db
         .insert_versioned("items", 1, &[Value::Int(5), Value::String("stale")])
         .is_err());
@@ -169,15 +169,24 @@ fn migration_scan_update_delete_reopen_and_backup_use_all_segments() -> Result<(
         db.update("items", &Expr::All, &[("score", Value::Float(0.75))])?,
         3
     );
-    let dead = fs::read(root.join("items.v1.data"))?;
-    let row_size = Layout::from_schema(&schema())?.row_size;
-    for (old, new) in v1.chunks_exact(row_size).zip(dead.chunks_exact(row_size)) {
-        assert_eq!(new[0], FLAG_DEAD);
-        assert_eq!(&old[1..], &new[1..]);
+    let dead = fs::read_to_string(root.join("items"))?;
+    let rows: Vec<_> = dead.lines().filter(|line| !line.starts_with('#')).collect();
+    assert!(rows.iter().all(|line| line.starts_with("DEAD\t")));
+    let old = std::str::from_utf8(&v1)?;
+    for (old, new) in old.lines().filter(|line| !line.starts_with('#')).zip(rows) {
+        assert_eq!(
+            old.split_once('\t').unwrap().1,
+            new.split_once('\t').unwrap().1
+        );
     }
-    let v2_len = fs::metadata(root.join("items.v2.data"))?.len();
     db.update("items", &Expr::All, &[("score", Value::Float(1.0))])?;
-    assert_eq!(fs::metadata(root.join("items.v2.data"))?.len(), v2_len);
+    assert_eq!(
+        fs::read_to_string(root.join("v2/items"))?
+            .lines()
+            .filter(|line| line.starts_with("LIVE\t"))
+            .count(),
+        3
+    );
     db.add_column("items", Column::new("note", nullable(DataType::STRING)))?;
     db.insert(
         "items",

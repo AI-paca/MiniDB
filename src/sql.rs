@@ -161,6 +161,24 @@ pub fn tokenize(text: &str) -> Result<Vec<Token>> {
                         'n' => '\n',
                         'r' => '\r',
                         't' => '\t',
+                        '0' => '\0',
+                        'u' => {
+                            if chars.next() != Some('{') {
+                                return Err("Ожидалось \\u{hex}".into());
+                            }
+                            let mut hex = String::new();
+                            loop {
+                                match chars.next() {
+                                    Some('}') => break,
+                                    Some(c) if c.is_ascii_hexdigit() && hex.len() < 6 => {
+                                        hex.push(c)
+                                    }
+                                    _ => return Err("Повреждён Unicode escape".into()),
+                                }
+                            }
+                            char::from_u32(u32::from_str_radix(&hex, 16)?)
+                                .ok_or("Некорректный Unicode символ")?
+                        }
                         '\\' => '\\',
                         '\'' => '\'',
                         '"' => '"',

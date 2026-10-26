@@ -4,5 +4,5 @@
 /scratch/
 /sample/.lock
 /sample/.history
-/sample/*.tmp
+/sample/**/*.tmp
 *.lock.tmp

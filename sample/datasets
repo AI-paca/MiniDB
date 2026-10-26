@@ -1,0 +1,9 @@
+# MiniDB text; VERSION 1
+# state	id	name	task	size
+LIVE	1	"iris"	"classification"	150
+LIVE	2	"mnist"	"classification"	300
+LIVE	3	"cifar"	"classification"	450
+LIVE	4	"imagenet"	"classification"	600
+LIVE	5	"housing"	"classification"	750
+LIVE	6	"lol"	"fall"	43
+LIVE	7	"lol"	"fall"	43
