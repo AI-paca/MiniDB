@@ -9,8 +9,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 
-pub const DEFAULT_DATABASE_PATH: &str = "sample";
+pub const DEFAULT_DATABASE_PATH: &str = "db/main";
 
+/// Проверяет предлагаемую действующую запись (LIVE) до её сохранения.
 pub type Validator = fn(Row<'_>) -> Result<()>;
 const MAX_CHANGE: usize = 16 * 1024 * 1024;
 
@@ -308,7 +309,7 @@ impl Database {
             self.check_schema(schema)?;
             let layout = crate::layout::Layout::from_schema(schema)?;
             let mut bytes = vec![0; layout.row_size];
-            record::encode_validated_layout(&layout, schema, vals, record::FLAG_FREE, &mut bytes)?;
+            record::encode_validated_layout(&layout, schema, vals, record::FLAG_LIVE, &mut bytes)?;
             let row = Row {
                 schema,
                 layout: &layout,
@@ -331,7 +332,13 @@ impl Database {
         let row = table.prepare(vals, record::FLAG_FREE)?;
         let id = row.at(pk)?.int()?;
         if let Some(rule) = validator {
-            rule(row)?;
+            // FREE остаётся в рабочем буфере INSERT; валидатор видит будущую LIVE-строку.
+            let mut candidate = row.bytes.to_vec();
+            candidate[crate::layout::FLAG_OFFSET] = record::FLAG_LIVE;
+            rule(Row {
+                bytes: &candidate,
+                ..row
+            })?;
         }
         table.insert_prepared()?;
         Ok(id)
