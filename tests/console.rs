@@ -191,6 +191,43 @@ fn alter_add_column_is_persistent_after_inserts_and_requires_explicit_null() {
 }
 
 #[test]
+fn empty_alter_versions_have_metadata_without_unused_segment_files() {
+    let temp = Temp::new();
+    success(&temp.run("CREATE TABLE notes (id INT PRIMARY KEY);\nALTER TABLE notes ADD a INT NULL;\nALTER TABLE notes ADD b STRING NULL;\nALTER TABLE notes ADD c FLOAT NULL;\nexit;\n"));
+    for version in 1..=3 {
+        assert!(!temp.0.join(format!("db/notes.v{version}.data")).exists());
+    }
+    assert!(temp.0.join("db/notes.v4.data").exists());
+    let schema = fs::read_to_string(temp.0.join("db/notes.schema.sql")).unwrap();
+    assert!(schema.contains("-- minidb-empty-version: 1"));
+    success(
+        &temp.run(
+            "INSERT INTO notes VALUES (1, NULL, 'one', 0.5);\nBACKUP empty_versions;\nexit;\n",
+        ),
+    );
+    assert!(success(&temp.run("SELECT * FROM notes;\nexit;\n")).contains("\"one\""));
+    fs::remove_file(temp.0.join("db/notes.v4.data")).unwrap();
+    let output = temp.run("");
+    assert!(!output.status.success()); // Потеря файла с данными по-прежнему ошибка.
+}
+
+#[test]
+fn seed_without_per_record_barriers_is_persisted_before_reopen() {
+    let temp = Temp::new();
+    let mut process = Command::new(env!("CARGO_BIN_EXE_minidb"))
+        .args(["--no-barriers"])
+        .arg(temp.0.join("db"))
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    process.stdin.take().unwrap().write_all(b"CREATE TABLE notes (id INT PRIMARY KEY, name STRING);\nINSERT INTO notes VALUES (NULL, 'seeded');\nexit;\n").unwrap();
+    assert!(success(&process.wait_with_output().unwrap()).contains("Режим seed"));
+    assert!(success(&temp.run("SELECT * FROM notes;\nexit;\n")).contains("\"seeded\""));
+}
+
+#[test]
 fn sql_insert_and_update_convert_integer_literals_for_float_columns() {
     let temp = Temp::new();
     let stdout = success(&temp.run("CREATE TABLE metrics (id INT PRIMARY KEY, size INT, accuracy FLOAT MIN 0 MAX 1, status STRING);\nINSERT INTO metrics VALUES (1, 1, 1, 'done');\nINSERT INTO metrics (accuracy, status, size) VALUES (1, 'done', 2);\nUPDATE metrics SET accuracy = 0 WHERE id = 2;\nSELECT id FROM metrics WHERE size > 1.5;\nexit;\n"));

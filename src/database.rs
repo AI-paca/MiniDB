@@ -59,6 +59,7 @@ pub struct Database {
     _lock: Lock,                            // Блокировка от повторного открытия
     tables: HashMap<String, Table>,         // Таблицы по именам
     validators: HashMap<String, Validator>, // Функции проверки записей по именам
+    write_barriers: bool,
 }
 
 impl Database {
@@ -97,6 +98,7 @@ impl Database {
             _lock: lock,
             tables,
             validators: rules,
+            write_barriers: true,
         };
         for table in db.tables.values() {
             db.check_schema(&table.schema)?;
@@ -193,7 +195,8 @@ impl Database {
         }
         self.check_schema(&schema)?;
         let name = schema.name.clone();
-        let table = Table::create(&self.path, schema)?;
+        let mut table = Table::create(&self.path, schema)?;
+        table.write_barriers = self.write_barriers;
         self.tables.insert(name, table);
         Ok(())
     }
@@ -502,6 +505,19 @@ impl Database {
             Ok(())
         })?;
         Ok(count)
+    }
+
+    /// Для seed/bench: отключает барьеры отдельных записей до финального sync.
+    /// Возврат в обычный режим синхронизирует накопленные записи один раз.
+    pub fn set_write_barriers(&mut self, enabled: bool) -> Result<()> {
+        if enabled && !self.write_barriers {
+            self.sync()?;
+        }
+        for table in self.tables.values_mut() {
+            table.write_barriers = enabled;
+        }
+        self.write_barriers = enabled;
+        Ok(())
     }
 
     // Сохранение всех таблиц на диск

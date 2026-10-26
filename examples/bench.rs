@@ -11,6 +11,7 @@ fn main() -> Result<()> {
     }
     let mut db = Database::open(&path)?;
     if db.schema("items").is_err() {
+        db.set_write_barriers(false)?;
         db.create(Schema::new(
             "items",
             vec![
@@ -31,6 +32,7 @@ fn main() -> Result<()> {
                 &[Value::Int(id), Value::String("benchmark record")],
             )?;
         }
+        db.set_write_barriers(true)?; // Один финальный sync до измерений поиска.
     }
     if db.scan("items", &Expr::All, |_| Ok(()))? != rows as usize {
         return Err("В каталоге другой набор данных; используйте новый путь".into());

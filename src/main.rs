@@ -46,6 +46,7 @@ JOIN: INT-поле слева → PRIMARY KEY справа, WHERE по поля�
 RESTORE с коротким именем ищет копию в <текущая_база>_backups/<имя>.
 В Unix-консоли: ↑/↓ — история, ←/→ — курсор, Tab — дополнение.
 Изменения сохраняются сразу. Файлы: <таблица>.schema.sql — схема, <таблица>.vN.data — сегменты.
+Seed без барьеров отдельных записей: bash run.sh --no-barriers каталог.
 Запуск из Bash: bash run.sh [каталог], справка: bash run.sh -h.
 ";
 
@@ -56,7 +57,7 @@ fn main() {
     }
 }
 fn run() -> Result<()> {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
     if args.first().is_some_and(|arg| arg == "gen") {
         if args.len() != 4 || args[2] != "--out" {
             return Err("Использование: minidb gen db/ --out dir/".into());
@@ -72,6 +73,8 @@ fn run() -> Result<()> {
         println!("Запуск: minidb [каталог_базы], по умолчанию sample; minidb gen db/ --out dir/\n\n{HELP}");
         return Ok(());
     }
+    let no_barriers = args.iter().any(|arg| arg == "--no-barriers");
+    args.retain(|arg| arg != "--no-barriers");
     if args.len() > 1 {
         return Err("Использование: minidb [каталог_базы] или minidb --help".into());
     }
@@ -79,7 +82,11 @@ fn run() -> Result<()> {
         .first()
         .map(String::as_str)
         .unwrap_or(DEFAULT_DATABASE_PATH);
-    let opened = Database::open(path)?;
+    let mut opened = Database::open(path)?;
+    if no_barriers {
+        opened.set_write_barriers(false)?;
+        println!("Режим seed: без барьеров на отдельные записи; финальный sync при выходе.");
+    }
     let stdin = io::stdin();
     let interactive = stdin.is_terminal();
     println!(

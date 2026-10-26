@@ -62,5 +62,5 @@ SQL
         sample_i=$((sample_i + 1))
     done
     printf 'exit;\n'
-} | "$sample_script_dir/run.sh" "$sample_root"
+} | "$sample_script_dir/run.sh" --no-barriers "$sample_root"
 printf 'Создана база %s: datasets (5), models (5), experiments (20).\n' "$sample_root"

@@ -3,13 +3,14 @@ pub use crate::record::Row;
 use crate::record::{self, FLAG_DEAD, FLAG_FREE, FLAG_LIVE};
 pub use crate::schema::{Column, Reference, Schema};
 use crate::{Result, Value};
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
 const READ_BUFFER_SIZE: usize = 64 * 1024;
 const HIGHEST_ID_PREFIX: &str = "-- minidb-highest-id: ";
+const EMPTY_VERSION_PREFIX: &str = "-- minidb-empty-version: ";
 
 // Ошибка внутреннего инварианта, отличимая от ошибок формата данных.
 #[derive(Debug)]
@@ -55,7 +56,9 @@ pub struct Table {
     schema_path: PathBuf,
     write_failed: bool,
     buf: Vec<u8>,
-    scratch: Vec<u8>, // Переиспользуемый буфер для прежнего DEAD-слота.
+    scratch: Vec<u8>,              // Переиспользуемый буфер для прежнего DEAD-слота.
+    empty_versions: BTreeSet<u32>, // Эти прошлые версии никогда не содержали строк.
+    pub(crate) write_barriers: bool,
 }
 
 impl Table {
@@ -100,8 +103,13 @@ impl Table {
             .open(&schema_path)?;
         let mut segments = Vec::new();
         let mut created = Vec::new();
+        let mut empty_versions = BTreeSet::new();
         let result = (|| -> Result<()> {
             for (version, count) in schema.history() {
+                if version != schema.version {
+                    empty_versions.insert(version);
+                    continue;
+                }
                 let path = crate::storage::segment_path(root, &schema.name, version);
                 let file = OpenOptions::new()
                     .read(true)
@@ -125,6 +133,9 @@ impl Table {
                 });
             }
             output.write_all(schema.to_text().as_bytes())?;
+            for version in &empty_versions {
+                writeln!(output, "{EMPTY_VERSION_PREFIX}{version}")?;
+            }
             output.sync_all()?;
             crate::storage::sync_directory(root)?;
             Ok(())
@@ -149,6 +160,8 @@ impl Table {
             saved_highest_id: 0,
             schema_path,
             write_failed: false,
+            empty_versions,
+            write_barriers: true,
         })
     }
 
@@ -157,7 +170,16 @@ impl Table {
         let schema_path = crate::storage::schema_path(root, name)?;
         let text = fs::read_to_string(&schema_path)?;
         let mut highest_id = 0;
+        let mut empty_versions = BTreeSet::new();
         for line in text.lines() {
+            if let Some(value) = line.strip_prefix(EMPTY_VERSION_PREFIX) {
+                let version: u32 = value
+                    .parse()
+                    .map_err(|_| "Повреждена отметка пустой версии")?;
+                if !empty_versions.insert(version) {
+                    return Err("Повторная отметка пустой версии".into());
+                }
+            }
             if let Some(value) = line.strip_prefix(HIGHEST_ID_PREFIX) {
                 let id: i64 = value.parse().map_err(|_| "Повреждён счётчик auto-ID")?;
                 if id < 0 {
@@ -171,9 +193,21 @@ impl Table {
             return Err("Имя файла схемы не совпадает с именем таблицы".into());
         }
         let layout = Layout::from_schema(&schema)?;
+        if empty_versions
+            .iter()
+            .any(|v| *v >= schema.version || !schema.history().contains_key(v))
+        {
+            return Err("Некорректная отметка пустой версии".into());
+        }
         let mut segments = Vec::new();
         for (version, count) in schema.history() {
             let path = crate::storage::existing_segment(root, name, version)?;
+            if empty_versions.contains(&version) {
+                if path.exists() && fs::metadata(&path)?.len() != 0 {
+                    return Err("Помеченный пустым сегмент содержит данные".into());
+                }
+                continue;
+            }
             let physical = Layout::from_prefix(&schema, count)?;
             physical.validate(&schema)?;
             let file = OpenOptions::new()
@@ -196,6 +230,10 @@ impl Table {
             let filename = filename.to_string_lossy();
             if crate::storage::is_segment(&filename, name)
                 && !segments.iter().any(|s| s.path == entry.path())
+                && !empty_versions.iter().any(|v| {
+                    crate::storage::existing_segment(root, name, *v)
+                        .is_ok_and(|p| p == entry.path())
+                })
             {
                 return Err(format!("Сегмент {filename} отсутствует в истории схемы").into());
             }
@@ -211,6 +249,8 @@ impl Table {
             saved_highest_id: highest_id,
             schema_path,
             write_failed: false,
+            empty_versions,
+            write_barriers: true,
         };
         table.rebuild_index()?;
         Ok(table)
@@ -280,11 +320,19 @@ impl Table {
     }
 
     // Атомарная замена текстовой схемы вместе со счётчиком ID.
-    fn save_schema(&self, schema: &Schema, highest: i64) -> Result<()> {
+    fn save_schema(
+        &self,
+        schema: &Schema,
+        highest: i64,
+        empty_versions: &BTreeSet<u32>,
+    ) -> Result<()> {
         let temporary = self.schema_path.with_extension("tmp");
         let result = (|| -> Result<()> {
             let mut output = File::create(&temporary)?;
             writeln!(output, "{}{HIGHEST_ID_PREFIX}{highest}", schema.to_text())?;
+            for version in empty_versions {
+                writeln!(output, "{EMPTY_VERSION_PREFIX}{version}")?;
+            }
             output.sync_all()?;
             drop(output);
             fs::rename(&temporary, &self.schema_path)?;
@@ -302,7 +350,7 @@ impl Table {
     // (переиспользование DEAD / смена LIVE PK) и при явном sync.
     fn checkpoint_highest_id(&mut self) -> Result<()> {
         if self.highest_id > self.saved_highest_id {
-            self.save_schema(&self.schema, self.highest_id)?;
+            self.save_schema(&self.schema, self.highest_id, &self.empty_versions)?;
             self.saved_highest_id = self.highest_id;
         }
         Ok(())
@@ -339,10 +387,25 @@ impl Table {
         self.check_ready()?;
         let schema = self.schema.with_added_column(column)?;
         let layout = Layout::from_schema(&schema)?;
-        let root = self.schema_path.parent().ok_or("Нет каталога схемы")?;
-        let path = crate::storage::segment_path(root, &schema.name, schema.version);
+        let root = self
+            .schema_path
+            .parent()
+            .ok_or("Нет каталога схемы")?
+            .to_owned();
+        let path = crate::storage::segment_path(&root, &schema.name, schema.version);
         // Закрываем пишущий дескриптор прежнего сегмента после сохранения схемы.
-        let old_read = File::open(&self.segments.last().ok_or("Нет сегментов")?.path)?;
+        let old = self.segments.last().ok_or("Нет сегментов")?;
+        let empty = old.slot_count == 0;
+        let old_path = old.path.clone();
+        let old_read = if empty {
+            None
+        } else {
+            Some(File::open(&old.path)?)
+        };
+        let mut empty_versions = self.empty_versions.clone();
+        if empty {
+            empty_versions.insert(old.version);
+        }
         self.sync()?;
         let file = OpenOptions::new()
             .read(true)
@@ -354,7 +417,7 @@ impl Table {
             let _ = fs::remove_file(path);
             return Err(error.into());
         }
-        if let Err(error) = self.save_schema(&schema, self.highest_id) {
+        if let Err(error) = self.save_schema(&schema, self.highest_id, &empty_versions) {
             // rename мог уже состояться: в этом случае сегмент нужен при повторном open.
             if fs::read_to_string(&self.schema_path)
                 .ok()
@@ -368,7 +431,11 @@ impl Table {
             }
             return Err(error);
         }
-        self.segments.last_mut().ok_or("Нет сегментов")?.file = old_read;
+        if let Some(old_read) = old_read {
+            self.segments.last_mut().ok_or("Нет сегментов")?.file = old_read;
+        } else {
+            self.segments.pop();
+        }
         self.segments.push(Segment {
             version: schema.version,
             layout: layout.clone(),
@@ -379,8 +446,13 @@ impl Table {
         });
         self.saved_highest_id = self.highest_id;
         self.schema = schema;
+        self.empty_versions = empty_versions;
         self.buf.resize(layout.row_size, 0);
         self.layout = layout;
+        if empty {
+            fs::remove_file(old_path)?;
+            crate::storage::sync_directory(&root)?;
+        }
         Ok(())
     }
 
@@ -457,14 +529,20 @@ impl Table {
         let offset = slot * segment.layout.row_size as u64;
         segment.file.seek(SeekFrom::Start(offset))?;
         segment.file.write_all(&[FLAG_FREE])?;
-        segment.file.sync_data()?;
+        if self.write_barriers {
+            segment.file.sync_data()?;
+        }
         self.buf[0] = FLAG_FREE;
         segment.file.seek(SeekFrom::Start(offset))?;
         segment.file.write_all(&self.buf)?;
-        segment.file.sync_data()?;
+        if self.write_barriers {
+            segment.file.sync_data()?;
+        }
         segment.file.seek(SeekFrom::Start(offset))?;
         segment.file.write_all(&[FLAG_LIVE])?;
-        segment.file.sync_data()?;
+        if self.write_barriers {
+            segment.file.sync_data()?;
+        }
         self.buf[0] = FLAG_LIVE;
         segment.free.pop();
         self.highest_id = self.highest_id.max(id);
@@ -551,12 +629,16 @@ impl Table {
         if version == self.schema.version {
             segment.file.seek(SeekFrom::Start(offset))?;
             segment.file.write_all(&[FLAG_DEAD])?;
-            segment.file.sync_data()?;
+            if self.write_barriers {
+                segment.file.sync_data()?;
+            }
         } else {
             let mut flags = OpenOptions::new().write(true).open(&segment.path)?;
             flags.seek(SeekFrom::Start(offset))?;
             flags.write_all(&[FLAG_DEAD])?;
-            flags.sync_data()?;
+            if self.write_barriers {
+                flags.sync_data()?;
+            }
         }
         let slot = offset / segment.layout.row_size as u64;
         if !segment.free.contains(&slot) {

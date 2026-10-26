@@ -54,7 +54,7 @@
 | Минимальный toolchain указан явно | Cargo.toml: rust-version = 1.89; [README](../README.md) объясняет требования API и платформы | API сверены с официальной документацией Rust; запуск выполнен на 1.98, отдельного 1.89 и Windows-target в среде нет |
 | Нет неявного встроенного валидатора sample | sample.sh создаёт SQL-схемы без VALIDATOR; CLI использует Database::open, пользовательские функции — через библиотечный open_with | `sample_is_sql_through_run_sh_and_refuses_to_overwrite_existing_data`, `null_limits_and_native_validator_survive_restart` |
 
-78 тестов прошли (включая сборку отдельных потребителей v1/v2):
+80 тестов прошли (включая сборку отдельных потребителей v1/v2):
 
 ```sh
 cargo test --locked --offline --all-targets
